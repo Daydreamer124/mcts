@@ -317,33 +317,6 @@ class SelectNextVisualizationTaskAction(DataStorytellingAction):
 #             current_chapter.add_chart(Chart(url=chart_url, caption=""))
 
 
-class ChartsRevisorAction(DataStorytellingAction):
-    def execute(self, report: Report, llm_kwargs: Dict[str, Any]):
-        current_chapter = report.chapters[-1]
-        for chart in current_chapter.charts:
-            prompt = get_prompt("revise_chart", {"CHART_URL": chart.url})
-            caption = call_openai(prompt, **llm_kwargs)[0]
-            chart.caption = caption.strip()
-
-
-class InsightsGeneratorAction(DataStorytellingAction):
-    def execute(self, report: Report, llm_kwargs: Dict[str, Any]):
-        current_chapter = report.chapters[-1]
-        prompt = get_prompt("generate_insights", {"CHAPTER_TITLE": current_chapter.title, "CHARTS": [chart.url for chart in current_chapter.charts]})
-        response = call_openai(prompt, **llm_kwargs)[0]
-        insights = json.loads(response)["insights"]
-        for chart, insight in zip(current_chapter.charts, insights):
-            chart.caption = insight
-
-
-class ChapterSummarizerAction(DataStorytellingAction):
-    def execute(self, report: Report, llm_kwargs: Dict[str, Any]):
-        current_chapter = report.chapters[-1]
-        prompt = get_prompt("chapter_summarization", {"CHAPTER_TITLE": current_chapter.title, "CHARTS": [chart.caption for chart in current_chapter.charts]})
-        response = call_openai(prompt, **llm_kwargs)[0]
-        current_chapter.summary = response.strip()
-
-
 class GenerateVisualizationAction(DataStorytellingAction):
     def __init__(self):
         super().__init__("A5", "生成可视化图表", [ReportGenerationState.CHAPTER_DEFINED])
@@ -371,7 +344,6 @@ class GenerateVisualizationAction(DataStorytellingAction):
         task_name = selected_task["task_name"]
         description = selected_task["description"]
         chart_type = selected_task["chart_type"][0] if selected_task["chart_type"] else "Bar Chart"  # 默认使用条形图
-        relevant_columns = selected_task["relevant_columns"]
         
         # 创建子节点
         child_node = copy.deepcopy(node)
@@ -458,7 +430,10 @@ class GenerateVisualizationAction(DataStorytellingAction):
                 chart = Chart(
                     url=chart_path,
                     caption=description,
-                    chart_position="center"  # 使用默认的居中位置
+                    chart_position="center",
+                    code=visualization.code if hasattr(visualization, 'code') else None,
+                    chart_type=chart_type,
+                    task_id=task_id
                 )
                 
                 # 将图表添加到章节
@@ -480,3 +455,343 @@ class GenerateVisualizationAction(DataStorytellingAction):
         return [child_node]
     
    
+class ReviseVisualizationAction(DataStorytellingAction):
+    def __init__(self):
+        super().__init__("A6", "修改可视化图表", [ReportGenerationState.CHAPTER_DEFINED])
+        
+    def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
+        """
+        A6 负责修改已生成的可视化图表
+        
+        步骤:
+        1. 获取 A5 生成的图表
+        2. 使用 LIDA 的 edit 功能修改图表
+        3. 将修改后的图表更新到相应的章节中
+        4. 创建子节点并返回
+        """
+        # 检查是否有选定的任务
+        if not hasattr(node, 'selected_task'):
+            print("没有选定的可视化任务，无法修改图表")
+            return []
+        
+        # 获取选定的任务信息
+        selected_task = node.selected_task
+        chapter_idx = selected_task["chapter_idx"]
+        task_id = selected_task["task_id"]
+        chapter = node.report.chapters[chapter_idx]
+        
+        # 查找对应的图表
+        target_chart = None
+        chart_idx = -1
+        for i, chart in enumerate(chapter.charts):
+            if hasattr(chart, 'task_id') and chart.task_id == task_id:
+                target_chart = chart
+                chart_idx = i
+                break
+        
+        if target_chart is None:
+            print(f"找不到任务 {task_id} 对应的图表，无法修改")
+            return []
+        
+        # 检查图表是否有代码
+        if not hasattr(target_chart, 'code') or not target_chart.code:
+            print(f"图表没有关联的代码，无法使用 LIDA 编辑功能")
+            return []
+        
+        # 创建子节点
+        child_node = copy.deepcopy(node)
+        child_node.parent_node = node
+        child_node.parent_action = self
+        child_node.depth = node.depth + 1
+        
+        try:
+            # 获取数据文件路径
+            dataset_path = node.report.dataset_path
+            
+            # 读取数据
+            df = pd.read_csv(dataset_path)
+            
+            # 创建 LIDA 管理器
+            from lida.components.manager import Manager
+            from lida.datamodel import Summary
+            
+            manager = Manager()
+            
+            # 读取数据摘要 JSON 文件
+            data_summary = {}
+            json_path = os.path.join(os.path.dirname(dataset_path), "data_context.json")
+            print(f"尝试读取数据摘要 JSON: {json_path}")
+            
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data_summary = json.load(f)
+                print("✓ 成功读取数据摘要 JSON")
+            except Exception as e:
+                print(f"✗ 读取数据摘要 JSON 失败: {str(e)}")
+                # 如果无法读取 JSON 文件，使用默认值
+                data_summary = {
+                    "name": node.report.original_query,
+                    "dataset_description": node.report.data_context,
+                    "fields_info": {col: {"dtype": str(dtype)} for col, dtype in zip(df.columns, df.dtypes)}
+                }
+            
+            # 创建 Summary 对象，直接从 JSON 文件中提取必要参数
+            summary = Summary(
+                name=data_summary.get("name", "购物数据分析"),
+                file_name=dataset_path,  # 使用原始数据文件路径
+                dataset_description=data_summary.get("dataset_description", "购物数据集"),
+                field_names=list(data_summary.get("fields_info", {}).keys()) if "fields_info" in data_summary else df.columns.tolist(),
+                fields=[info.get("dtype", "unknown") for info in data_summary.get("fields_info", {}).values()] if "fields_info" in data_summary else [str(dtype) for dtype in df.dtypes.tolist()]
+            )
+            
+            # 生成编辑指令
+            edit_instruction = "请根据任务描述修改图表，使图表更符合任务要求。"
+            print(f"生成的编辑指令: {edit_instruction}")
+            
+            # 使用 LIDA 的 edit 功能修改图表
+            print(f"正在修改任务 '{selected_task['description']}' 的图表...")
+            edited_visualization = manager.edit(
+                code=target_chart.code,
+                summary=summary,
+                instructions=edit_instruction,
+                library="matplotlib"
+            )
+            
+            # 处理编辑后的可视化结果
+            if isinstance(edited_visualization, list) and len(edited_visualization) > 0:
+                edited_visualization = edited_visualization[0]
+                print("✓ 使用第一个编辑结果进行处理")
+            
+            # 检查是否为有效的编辑结果
+            if hasattr(edited_visualization, 'status') and edited_visualization.status:
+                print("✓ 成功修改可视化图表")
+                
+                # 保存修改后的图表
+                chart_filename = f"chart_{task_id}_edited.png"
+                chart_path = os.path.join("storyteller/output/charts", chart_filename)
+                
+                # 确保输出目录存在
+                os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+                
+                # 保存图表
+                if hasattr(edited_visualization, 'savefig'):
+                    edited_visualization.savefig(chart_path)
+                    print(f"✓ 修改后的图表已保存到: {chart_path}")
+                
+                # 创建新的图表对象
+                from storyteller.algorithm.mcts_node import Chart
+                edited_chart = Chart(
+                    url=chart_path,
+                    caption=target_chart.caption + " (已优化)",
+                    chart_position=target_chart.chart_position,
+                    code=edited_visualization.code if hasattr(edited_visualization, 'code') else None,
+                    chart_type=target_chart.chart_type,
+                    task_id=task_id
+                )
+                
+                # 更新章节中的图表
+                child_node.report.chapters[chapter_idx].charts[chart_idx] = edited_chart
+                
+                print(f"✓ 成功修改任务 '{selected_task['description']}' 的图表")
+            else:
+                error_msg = edited_visualization.error if hasattr(edited_visualization, 'error') else "未知错误"
+                print(f"✗ 修改可视化图表失败: {error_msg}")
+        
+        except Exception as e:
+            print(f"✗ 修改可视化图表时发生错误: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        return [child_node]
+   
+class GenerateCaptionAction(DataStorytellingAction):
+    def __init__(self):
+        super().__init__("A7", "生成图表说明与洞察", [ReportGenerationState.CHAPTER_DEFINED])
+        
+    def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
+        """
+        A7 负责分析可视化图表并生成洞察性的图表说明
+        
+        步骤:
+        1. 获取选定的任务和对应的图表
+        2. 结合章节标题、可视化任务和用户查询分析图表
+        3. 生成洞察性的图表说明
+        4. 更新图表的说明文字
+        5. 创建子节点并返回
+        """
+        # 检查是否有选定的任务
+        if not hasattr(node, 'selected_task'):
+            print("没有选定的可视化任务，无法生成图表说明")
+            return []
+        
+        # 获取选定的任务信息
+        selected_task = node.selected_task
+        chapter_idx = selected_task["chapter_idx"]
+        task_id = selected_task["task_id"]
+        chapter = node.report.chapters[chapter_idx]
+        
+        # 查找对应的图表
+        target_chart = None
+        chart_idx = -1
+        for i, chart in enumerate(chapter.charts):
+            if hasattr(chart, 'task_id') and chart.task_id == task_id:
+                target_chart = chart
+                chart_idx = i
+                break
+        
+        if target_chart is None:
+            print(f"找不到任务 {task_id} 对应的图表，无法生成说明")
+            return []
+        
+        # 创建子节点
+        child_node = copy.deepcopy(node)
+        child_node.parent_node = node
+        child_node.parent_action = self
+        child_node.depth = node.depth + 1
+        
+        try:
+            # 获取图表URL
+            chart_url = target_chart.url
+            
+            # 将图表转换为base64编码
+            import base64
+            with open(chart_url, "rb") as image_file:
+                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            # 使用模板生成提示词
+            prompt_args = {
+                "QUERY": node.original_query,
+                "CHAPTER_TITLE": chapter.title,
+                "TASK_NAME": selected_task.get('task_name', '未知任务')
+            }
+            
+            # 使用 get_prompt 获取提示词
+            prompt_text = get_prompt("chart_caption_vision", prompt_args)
+            
+            print(f"正在为图表生成说明与洞察...")
+            
+            # 使用 OpenAI 的多模态 API
+            from openai import OpenAI
+            client = OpenAI()
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是一个专业的数据可视化分析师，擅长解读图表并提供洞察。"
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt_text},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.3
+            )
+            
+            # 获取响应内容
+            caption = response.choices[0].message.content.strip()
+            
+            print(f"✓ 成功生成图表说明")
+            
+            # 更新图表说明
+            updated_chart = copy.deepcopy(target_chart)
+            updated_chart.caption = caption
+            
+            # 更新章节中的图表
+            child_node.report.chapters[chapter_idx].charts[chart_idx] = updated_chart
+            
+            print(f"✓ 成功更新图表说明")
+        
+        except Exception as e:
+            print(f"✗ 生成图表说明时发生错误: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        return [child_node]
+
+class GenerateChapterSummaryAction(DataStorytellingAction):
+    def __init__(self):
+        super().__init__("A8", "生成章节总结", [ReportGenerationState.CHAPTER_DEFINED])
+        
+    def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
+        """
+        A8 负责生成章节的总结
+        
+        步骤:
+        1. 获取章节信息和所有图表的说明
+        2. 结合用户查询、章节标题和图表说明生成章节总结
+        3. 更新章节的总结文本
+        4. 创建子节点并返回
+        """
+        # 检查是否有选定的任务
+        if not hasattr(node, 'selected_task'):
+            print("没有选定的任务，无法确定要总结的章节")
+            return []
+        
+        # 获取选定的任务信息
+        selected_task = node.selected_task
+        chapter_idx = selected_task["chapter_idx"]
+        chapter = node.report.chapters[chapter_idx]
+        
+        # 检查章节是否有图表
+        if not chapter.charts:
+            print(f"章节 '{chapter.title}' 没有图表，无法生成总结")
+            return []
+        
+        # 创建子节点
+        child_node = copy.deepcopy(node)
+        child_node.parent_node = node
+        child_node.parent_action = self
+        child_node.depth = node.depth + 1
+        
+        try:
+            # 收集所有图表的说明
+            charts_captions = []
+            for i, chart in enumerate(chapter.charts):
+                caption = chart.caption if hasattr(chart, 'caption') and chart.caption else "无说明"
+                task_id = chart.task_id if hasattr(chart, 'task_id') else f"图表_{i+1}"
+                charts_captions.append(f"图表 {i+1} ({task_id}):\n{caption}")
+            
+            # 将所有图表说明合并为一个文本
+            charts_captions_text = "\n\n".join(charts_captions)
+            
+            # 使用模板生成提示词
+            prompt_args = {
+                "QUERY": node.original_query,
+                "CHAPTER_TITLE": chapter.title,
+                "CHARTS_CAPTIONS": charts_captions_text
+            }
+            
+            # 使用 get_prompt 获取提示词
+            prompt = get_prompt("chapter_summary", prompt_args)
+            
+            print(f"正在为章节 '{chapter.title}' 生成总结...")
+            
+            # 使用 call_openai 调用 LLM
+            responses = call_openai(prompt, **llm_kwargs)
+            if responses and len(responses) > 0:
+                summary = responses[0].strip()
+                print(f"✓ 成功生成章节总结")
+                
+                # 更新章节总结
+                child_node.report.chapters[chapter_idx].summary = summary
+                
+                print(f"✓ 成功更新章节 '{chapter.title}' 的总结")
+            else:
+                print(f"✗ 生成章节总结失败: 没有收到有效响应")
+        
+        except Exception as e:
+            print(f"✗ 生成章节总结时发生错误: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        return [child_node]

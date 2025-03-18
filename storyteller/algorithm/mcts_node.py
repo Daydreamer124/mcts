@@ -21,7 +21,10 @@ class Chart:
     def __init__(self,
                 url: str, 
                 caption: str,
-                chart_position: str = "center"):
+                chart_position: str = "center",
+                code: str = None,
+                chart_type: str = None,
+                task_id: str = None):
         """
         初始化图表对象
         
@@ -29,11 +32,17 @@ class Chart:
             url: 图表的URL地址
             caption: 图表的说明文字
             chart_position: 图表在页面中的位置，默认为居中
+            code: 生成图表的代码
+            chart_type: 图表类型
+            task_id: 关联的任务ID
         """
         self.type = "chart"  # 类型标识，表明这是单个图表
         self.url = url  # 存储图表的URL
         self.caption = caption  # 存储图表的说明文字
         self.chart_position = chart_position  # 图表在报告中的位置
+        self.code = code  # 存储生成图表的代码
+        self.chart_type = chart_type  # 存储图表类型
+        self.task_id = task_id  # 存储关联的任务ID
 
     def to_dict(self):
         """
@@ -42,12 +51,22 @@ class Chart:
         返回:
             包含图表信息的字典
         """
-        return {
+        chart_dict = {
             "type": self.type,
             "url": self.url,
             "chart_position": self.chart_position,
             "caption": self.caption
         }
+        
+        # 添加可选字段（如果存在）
+        if self.code:
+            chart_dict["code"] = self.code
+        if self.chart_type:
+            chart_dict["chart_type"] = self.chart_type
+        if self.task_id:
+            chart_dict["task_id"] = self.task_id
+            
+        return chart_dict
 
 # ChartGroup 多个Chart组合
 class ChartGroup:

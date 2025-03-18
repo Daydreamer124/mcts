@@ -9,7 +9,7 @@ sys.path.append(project_root)
 
 # 导入所需模块
 from storyteller.algorithm.mcts_node import MCTSNode, Report, ReportGenerationState, Chapter, Chart
-from storyteller.algorithm.mcts_action import SelectNextVisualizationTaskAction, GenerateVisualizationAction
+from storyteller.algorithm.mcts_action import SelectNextVisualizationTaskAction, GenerateVisualizationAction, ReviseVisualizationAction, GenerateCaptionAction
 import copy
 
 # 创建一个测试报告对象
@@ -21,7 +21,7 @@ test_report = Report(
 
 # 添加章节
 test_report.add_chapter(Chapter(title="不同年龄段的消费者的消费偏好分析"))
-test_report.add_chapter(Chapter(title="男性与女性消费者的消费行为对比"))#
+test_report.add_chapter(Chapter(title="男性与女性消费者的消费行为对比"))
 
 # 为章节添加可视化任务
 test_report.chapters[0].visualization_tasks = [
@@ -44,6 +44,10 @@ test_report.chapters[1].visualization_tasks = [
     }
 ]
 
+# 初始化所有章节的任务状态
+for chapter in test_report.chapters:
+    chapter.initialize_tasks_status()
+
 # 创建一个测试节点
 test_node = MCTSNode(
     node_type=ReportGenerationState.CHAPTER_DEFINED,
@@ -57,6 +61,8 @@ test_node = MCTSNode(
 # 初始化 Action
 select_next_task_action = SelectNextVisualizationTaskAction()
 generate_visualization_action = GenerateVisualizationAction()
+revise_visualization_action = ReviseVisualizationAction()
+generate_caption_action = GenerateCaptionAction()
 
 # 定义 LLM 参数
 llm_kwargs = {
@@ -67,15 +73,11 @@ llm_kwargs = {
     "max_tokens": 1024
 }
 
-# 测试生成可视化图表
-print("开始测试生成可视化图表...")
+# 测试流程
+print("开始测试可视化图表生成、修改和说明生成流程...")
 
-# 初始化所有章节的任务状态
-for chapter in test_node.report.chapters:
-    chapter.initialize_tasks_status()
-
-# 选择第一个任务
-print("\n选择第一个任务:")
+# 1. 选择第一个任务
+print("\n1. 选择第一个任务:")
 next_task_nodes = select_next_task_action.create_children_nodes(test_node, llm_kwargs)
 
 if next_task_nodes:
@@ -86,8 +88,8 @@ if next_task_nodes:
     print(f"  任务ID: {selected_task['task_id']}")
     print(f"  任务描述: {selected_task['description']}")
     
-    # 生成可视化图表
-    print("\n生成可视化图表:")
+    # 2. 生成可视化图表
+    print("\n2. 生成可视化图表:")
     visualization_nodes = generate_visualization_action.create_children_nodes(selected_node, llm_kwargs)
     
     if visualization_nodes:
@@ -102,18 +104,57 @@ if next_task_nodes:
                 print(f"    图表 {i+1}:")
                 print(f"      URL: {chart.url}")
                 print(f"      说明: {chart.caption}")
-                print(f"      位置: {chart.chart_position}")
-                print(f"      类型: {chart.type}")
+                
+            # 3. 修改可视化图表
+            print("\n3. 修改可视化图表:")
+            
+            # 设置选定的任务
+            result_node.selected_task = selected_task
+            
+            # 执行修改操作
+            revised_nodes = revise_visualization_action.create_children_nodes(result_node, llm_kwargs)
+            
+            if revised_nodes:
+                revised_node = revised_nodes[0]
+                revised_chapter = revised_node.report.chapters[chapter_idx]
+                
+                # 检查是否修改了图表
+                if revised_chapter.charts:
+                    print(f"  成功修改图表: {len(revised_chapter.charts)} 个")
+                    for i, chart in enumerate(revised_chapter.charts):
+                        print(f"    修改后的图表 {i+1}:")
+                        print(f"      URL: {chart.url}")
+                        print(f"      说明: {chart.caption}")
+                    
+                    # 4. 生成图表说明
+                    print("\n4. 生成图表说明:")
+                    
+                    # 设置选定的任务
+                    revised_node.selected_task = selected_task
+                    
+                    # 执行说明生成操作
+                    caption_nodes = generate_caption_action.create_children_nodes(revised_node, llm_kwargs)
+                    
+                    if caption_nodes:
+                        caption_node = caption_nodes[0]
+                        caption_chapter = caption_node.report.chapters[chapter_idx]
+                        
+                        # 检查是否生成了说明
+                        if caption_chapter.charts:
+                            print(f"  成功生成图表说明: {len(caption_chapter.charts)} 个")
+                            for i, chart in enumerate(caption_chapter.charts):
+                                print(f"    图表 {i+1} 的说明:")
+                                print(f"      {chart.caption}")
+                        else:
+                            print("  没有生成图表说明")
+                    else:
+                        print("  生成图表说明失败")
+                else:
+                    print("  没有修改图表")
+            else:
+                print("  修改可视化图表失败")
         else:
             print("  没有生成图表")
-        
-        # 检查任务状态
-        task_id = selected_task['task_id']
-        if task_id in chapter.tasks_status:
-            status = chapter.tasks_status[task_id]["status"]
-            print(f"  任务状态: {status}")
-        else:
-            print("  找不到任务状态")
     else:
         print("  生成可视化图表失败")
 else:
