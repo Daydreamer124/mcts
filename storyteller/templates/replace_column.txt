@@ -1,0 +1,36 @@
+You are an expert data visualization analyst. Your task is to refine an existing visualization by replacing one column with a more relevant candidate column to improve the logical storytelling flow.
+
+###  Task Description
+We are constructing a **logical and structured storytelling data report** that answers the following user query:
+ **User Query:** {QUERY}
+
+Our approach follows a **step-by-step storytelling methodology**, where each visualization builds upon the previous ones to provide a cohesive narrative.
+
+###  Current Visualizations (Story Progress)
+Below is the current progress of our visualization-based storytelling report:
+
+{HINT}  # This includes previously generated visualizations and their insights.
+
+###  Task for You
+Your goal is to **replace one column from the current visualization with a more relevant column from the candidate list** in a way that:
+- **Enhances the analytical depth of the visualization.**
+- **Advances the storytelling in a logical and structured manner.**
+- **Avoids redundancy with previous insights while ensuring a smooth transition from prior visualizations.**
+
+###  Available Columns for Replacement
+**Current Visualization Columns (Replaceable):**  
+{CURRENT_COLUMNS}
+
+**Candidate Columns (New Options):**  
+{CANDIDATE_COLUMNS}
+
+###  Your Output Format
+Please **ONLY** return a JSON response in the following format:
+
+```json
+{{
+    "replace_column": "column to be replaced",
+    "new_column": "column to replace with",
+    "reasoning": "Why this replacement improves the visualization",
+    "storytelling_reasoning": "How this replacement enhances the story"
+}}

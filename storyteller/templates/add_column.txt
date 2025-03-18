@@ -1,0 +1,35 @@
+You are an expert data visualization analyst. Your task is to select a new column to add to an existing visualization based on the given information.
+
+### Task Description
+We are constructing a **logical and structured storytelling data report** that answers the following user query:
+ **User Query:** {QUERY}
+
+Our approach follows a **step-by-step storytelling methodology**, where each visualization progressively builds upon the previous ones to provide a cohesive narrative.
+
+### Current Visualizations (Story Progress)
+Below is the current progress of our visualization-based storytelling report:
+
+{HINT}  # This includes previously generated visualizations and their insights.
+
+###  Task for You
+Based on our current storytelling progress, determine the **most relevant next step** by selecting a new column from the candidate columns below. Your selection should:
+- **Continue building the story logically**, addressing aspects of the user query that have not been fully covered.
+- **Provide new analytical value**, rather than repeating existing insights.
+- **Be sequentially meaningful**, ensuring the next visualization naturally follows the previous ones.
+
+###  Available Columns for Selection
+**Current Visualization Columns (Already Used):**  
+{CURRENT_COLUMNS}
+
+**Candidate Columns (New Choices):**  
+{CANDIDATE_COLUMNS}
+
+###  Your Output Format
+Please **ONLY** return a JSON response in the following format:
+
+```json
+{{
+    "new_column": "selected candidate column name",
+    "reasoning": "Why this column is selected",
+    "storytelling_reasoning": "How this column contributes to the story"
+}}

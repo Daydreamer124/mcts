@@ -1,0 +1,252 @@
+{
+  "name": "shopping.csv",
+  "dataset_description": "这个数据集包含3900行和18列数据。重要的分类列包括性别（男性：2652人，女性：1248人）、商品类别（服装：1737个，配件：1240个，鞋类：599个，外套：324个）、尺码（M：1755个，L：1053个，S：663个，XL：429个）等。重要的数值列包括顾客ID的范围在1到3900之间，年龄在18到70之间，购买金额在20到100美元之间，评价评分在2.5到5.0之间，以及之前购买次数在1到50次之间。整体而言，这个数据集提供了关于顾客购物行为的详细信息，涵盖了性别、商品偏好、购买金额、评价等方面的数据。",
+  "total_rows": 3900,
+  "total_columns": 18,
+  "fields_info": {
+    "Customer_ID": {
+      "dtype": "int64",
+      "num_unique_values": 3900,
+      "missing_values": 0,
+      "semantic_type": "ID"
+    },
+    "Age": {
+      "dtype": "int64",
+      "num_unique_values": 53,
+      "missing_values": 0,
+      "semantic_type": "NUMERIC"
+    },
+    "Gender": {
+      "dtype": "object",
+      "num_unique_values": 2,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Item_Purchased": {
+      "dtype": "object",
+      "num_unique_values": 25,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Category": {
+      "dtype": "object",
+      "num_unique_values": 4,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Purchase_Amount__USD_": {
+      "dtype": "int64",
+      "num_unique_values": 81,
+      "missing_values": 0,
+      "semantic_type": "NUMERIC"
+    },
+    "Location": {
+      "dtype": "object",
+      "num_unique_values": 50,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Size": {
+      "dtype": "object",
+      "num_unique_values": 4,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Color": {
+      "dtype": "object",
+      "num_unique_values": 25,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Season": {
+      "dtype": "object",
+      "num_unique_values": 4,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Review_Rating": {
+      "dtype": "float64",
+      "num_unique_values": 26,
+      "missing_values": 0,
+      "semantic_type": "NUMERIC"
+    },
+    "Subscription_Status": {
+      "dtype": "object",
+      "num_unique_values": 2,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Shipping_Type": {
+      "dtype": "object",
+      "num_unique_values": 6,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Discount_Applied": {
+      "dtype": "object",
+      "num_unique_values": 2,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Promo_Code_Used": {
+      "dtype": "object",
+      "num_unique_values": 2,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Previous_Purchases": {
+      "dtype": "int64",
+      "num_unique_values": 50,
+      "missing_values": 0,
+      "semantic_type": "NUMERIC"
+    },
+    "Payment_Method": {
+      "dtype": "object",
+      "num_unique_values": 6,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    },
+    "Frequency_of_Purchases": {
+      "dtype": "object",
+      "num_unique_values": 7,
+      "missing_values": 0,
+      "semantic_type": "CATEGORY"
+    }
+  },
+  "categorical_details": {
+    "Gender": {
+      "unique_values": {
+        "Male": 2652,
+        "Female": 1248
+      },
+      "total_categories": 2
+    },
+    "Category": {
+      "unique_values": {
+        "Clothing": 1737,
+        "Accessories": 1240,
+        "Footwear": 599,
+        "Outerwear": 324
+      },
+      "total_categories": 4
+    },
+    "Size": {
+      "unique_values": {
+        "M": 1755,
+        "L": 1053,
+        "S": 663,
+        "XL": 429
+      },
+      "total_categories": 4
+    },
+    "Season": {
+      "unique_values": {
+        "Spring": 999,
+        "Fall": 975,
+        "Winter": 971,
+        "Summer": 955
+      },
+      "total_categories": 4
+    },
+    "Subscription_Status": {
+      "unique_values": {
+        "No": 2847,
+        "Yes": 1053
+      },
+      "total_categories": 2
+    },
+    "Shipping_Type": {
+      "unique_values": {
+        "Free Shipping": 675,
+        "Standard": 654,
+        "Store Pickup": 650,
+        "Next Day Air": 648,
+        "Express": 646,
+        "2-Day Shipping": 627
+      },
+      "total_categories": 6
+    },
+    "Discount_Applied": {
+      "unique_values": {
+        "No": 2223,
+        "Yes": 1677
+      },
+      "total_categories": 2
+    },
+    "Promo_Code_Used": {
+      "unique_values": {
+        "No": 2223,
+        "Yes": 1677
+      },
+      "total_categories": 2
+    },
+    "Payment_Method": {
+      "unique_values": {
+        "PayPal": 677,
+        "Credit Card": 671,
+        "Cash": 670,
+        "Debit Card": 636,
+        "Venmo": 634,
+        "Bank Transfer": 612
+      },
+      "total_categories": 6
+    }
+  },
+  "numerical_details": {
+    "Customer_ID": {
+      "min": 1.0,
+      "max": 3900.0,
+      "mean": 1950.5,
+      "std": 1125.9773532358456,
+      "quartiles": {
+        "25%": 975.75,
+        "50%": 1950.5,
+        "75%": 2925.25
+      }
+    },
+    "Age": {
+      "min": 18.0,
+      "max": 70.0,
+      "mean": 44.06846153846154,
+      "std": 15.207589127162382,
+      "quartiles": {
+        "25%": 31.0,
+        "50%": 44.0,
+        "75%": 57.0
+      }
+    },
+    "Purchase_Amount__USD_": {
+      "min": 20.0,
+      "max": 100.0,
+      "mean": 59.76435897435898,
+      "std": 23.685392250875307,
+      "quartiles": {
+        "25%": 39.0,
+        "50%": 60.0,
+        "75%": 81.0
+      }
+    },
+    "Review_Rating": {
+      "min": 2.5,
+      "max": 5.0,
+      "mean": 3.7499487179487176,
+      "std": 0.7162228139312417,
+      "quartiles": {
+        "25%": 3.1,
+        "50%": 3.7,
+        "75%": 4.4
+      }
+    },
+    "Previous_Purchases": {
+      "min": 1.0,
+      "max": 50.0,
+      "mean": 25.35153846153846,
+      "std": 14.447125170462309,
+      "quartiles": {
+        "25%": 13.0,
+        "50%": 25.0,
+        "75%": 38.0
+      }
+    }
+  }
+}

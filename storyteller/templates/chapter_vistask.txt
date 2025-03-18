@@ -1,0 +1,157 @@
+You are a visualization expert who helps build data story reports. Your task is to generate detailed visual tasks for all chapters in a report.
+
+## Original Query:
+{QUERY}
+
+## Data Context:
+{DATA_CONTEXT}
+
+## Chapters:
+{CHAPTERS}
+
+### **Task Base for Data Visualization**
+Below are 18 different visualization tasks that can be used to analyze a dataset. For each chapter, determine which of these tasks are suitable based on the dataset structure.
+
+1️ **Change Over Time**  
+   - **Chart Type**: Line Chart / Area Chart  
+   - **Description**: Analyze how data changes over a time series.  
+   - **Example**: Sales trend over months.
+
+2️ **Characterize Distribution**  
+   - **Chart Type**: Bar Chart / Point Chart  
+   - **Description**: Display the distribution of data across a dataset.  
+   - **Example**: Distribution of customer ages.
+
+3️ **Cluster**  
+   - **Chart Type**: Bar Chart / Point Chart  
+   - **Description**: Find clusters of similar attribute values.  
+   - **Example**: Grouping customers based on spending behavior.
+
+4️ **Comparison**  
+   - **Chart Type**: Line Chart / Bar Chart / Point Chart  
+   - **Description**: Compare data across different entities.  
+   - **Example**: Male vs. Female spending habits.
+
+5️ **Compute Derived Value**  
+   - **Chart Type**: Rect (Text) / Arc / Bar Chart  
+   - **Description**: Compute aggregated or binned numeric derived values.  
+   - **Example**: Average sales revenue per customer segment.
+
+6️ **Correlate**  
+   - **Chart Type**: Bar Chart / Line Chart  
+   - **Description**: Identify relationships between different columns.  
+   - **Example**: How income level affects spending.
+
+7️ **Determine Range**  
+   - **Chart Type**: Tick Chart / Boxplot  
+   - **Description**: Identify the span of values within the dataset.  
+   - **Example**: The price range of different product categories.
+
+8️ **Deviation**  
+   - **Chart Type**: Bar (Rule) / Point (Rule)  
+   - **Description**: Compare data against a specific reference value (e.g., zero or mean).  
+   - **Example**: How customer spending deviates from the average.
+
+9️ **Error Range**  
+   - **Chart Type**: Error Band / Error Bar  
+   - **Description**: Summarize the error range of quantitative values.  
+   - **Example**: Sales forecast accuracy.
+
+10 **Filter**  
+   - **Chart Type**: Rect / Bar / Arc  
+   - **Description**: Identify data cases that satisfy given constraints.  
+   - **Example**: Customers who purchased more than $500 in the last month.
+
+1️1 **Find Anomalies**  
+   - **Chart Type**: Bar Chart / Point Chart  
+   - **Description**: Identify outliers in the dataset.  
+   - **Example**: Unusually high or low transactions.
+
+1️2️ **Find Extremum**  
+   - **Chart Type**: Bar Chart / Point Chart  
+   - **Description**: Identify extreme values in a dataset.  
+   - **Example**: The highest and lowest revenue transactions.
+
+1️3️ **Magnitude**  
+   - **Chart Type**: Arc Chart / Bar Chart  
+   - **Description**: Show relative or absolute size comparisons.  
+   - **Example**: Total revenue per product category.
+
+1️4️ **Part to Whole**  
+   - **Chart Type**: Arc Chart  
+   - **Description**: Show the component elements of a single entity.  
+   - **Example**: The percentage of sales per payment method.
+
+1️5️ **Retrieve Value**  
+   - **Chart Type**: Rect (Text)  
+   - **Description**: Find values of specific columns.  
+   - **Example**: The total number of customers.
+
+1️6️ **Sort**  
+   - **Chart Type**: Bar Chart  
+   - **Description**: Rank data based on an ordinal metric.  
+   - **Example**: The top 10 best-selling products.
+
+1️7️ **Spatial**  
+   - **Chart Type**: GeoShape / Circle (Text)  
+   - **Description**: Show spatial data such as latitude and longitude.  
+   - **Example**: Customer locations on a map.
+
+1️8️ **Trend**  
+   - **Chart Type**: Point Chart  
+   - **Description**: Use regression or LOESS to visualize variation trends.  
+   - **Example**: Customer spending trends over time.
+
+
+### **Your Task:**
+- Analyze each chapter title and the user query
+- For each chapter, determine which visualization tasks are most relevant based on the task base above
+- For each selected task, specify:
+  - A clear description of what the visualization should show
+  - The appropriate chart type(s)
+  - The relevant data columns needed
+  - The insight goal of the visualization
+
+### **Expected Output Format:**
+Return a JSON object with visualization tasks for all chapters. The JSON should have a "chapters" array, where each element has a "title" field and a "tasks" array.
+
+For example, your response should look like this (without the backticks):
+
+{{
+  "chapters": [
+    {{
+      "title": "不同年龄段的消费者的消费偏好分析",
+      "tasks": [
+        {{
+          "task_name": "Characterize Distribution",
+          "description": "展示不同年龄段消费者的分布情况",
+          "chart_type": ["Bar Chart", "Point Chart"],
+          "relevant_columns": ["Age", "Total_Spending"]
+        }},
+        {{
+          "task_name": "Comparison",
+          "description": "比较不同年龄段消费者的平均消费金额",
+          "chart_type": ["Bar Chart", "Line Chart"],
+          "relevant_columns": ["Age", "Average_Spending"]
+        }}
+      ]
+    }},
+    {{
+      "title": "男性与女性消费者的消费行为对比",
+      "tasks": [
+        {{
+          "task_name": "Comparison",
+          "description": "对比男性与女性消费者的平均购物金额",
+          "chart_type": ["Bar Chart", "Line Chart"],
+          "relevant_columns": ["Gender", "Total_Spending"]
+        }},
+        {{
+          "task_name": "Find Extremum",
+          "description": "找到最高和最低消费的性别群体",
+          "chart_type": ["Point Chart", "Bar Chart"],
+          "relevant_columns": ["Gender", "Max_Spending", "Min_Spending"]
+        }}
+      ]
+    }}
+  ]
+}} 

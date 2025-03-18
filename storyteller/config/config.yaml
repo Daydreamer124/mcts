@@ -1,0 +1,28 @@
+task:
+  task_id: consumer_analysis_001
+  question: "不同消费者的消费情况有什么不同？"
+  hint: ""
+  candidate_columns:
+    - Age
+    - Gender
+    - Category
+    - Size
+    - Season
+    - Subscription_Status
+    - Shipping_Type
+    - Payment_Method
+  selected_columns:
+    - Age
+    - Sales
+dataset_path: "storyteller/dataset/Superstore.csv"
+dataset_context_path: "storyteller/dataset/data_context.json"
+save_root_dir: "storyteller/results"
+max_rollout_steps: 8
+max_depth: 4
+max_columns: 5
+min_columns: 2
+exploration_constant: 1.41
+llm_kwargs:
+  model: "gpt-3.5-turbo"
+  temperature: 0.8
+  n: 3
