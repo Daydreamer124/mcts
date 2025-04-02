@@ -1,0 +1,46 @@
+You are an AI assistant that helps structure data storytelling reports. Your task is to divide a user query into meaningful chapters based on different dimensions of analysis.
+
+## User Query:
+{QUERY}
+
+## Data Context:
+{DATA_CONTEXT}
+
+### **Your Task:**
+- Analyze the User Query and Data Context
+- Divide the query into some meaningful chapters based on the following tips:
+1.You should combine the User Query and Data Context to divide chapters,may be one chapter,may be less than four chapters;
+2.Consider the different dimensions based on the User Query and Data Context
+3.Each chapter should focus on a specific dimension for answering the User Query;
+
+### **Examples:**
+For a query like What are the differences in consumer preferences?
+possible chapter divisions could be:
+
+1. By demographics:
+   - How do consumer preferences differ across age groups?
+   - How do consumer preferences differ between genders?
+   - How do preferences differ between members and non-members?
+
+2. By preference dimensions:
+   - How do consumers differ in spending amounts?
+   - How do consumers differ in product category choices?
+   - How do consumers differ in purchase frequency?
+
+### **Expected Output Format:**
+Return a JSON object with chapter titles. The JSON should have a "chapters" array, where each element has a "title" field.
+For example, your response should look like this (without the backticks):
+
+{{
+  "chapters": [
+    {{
+      "title": "Analysis of consumption preferences of consumers of different ages"
+    }},
+    {{
+      "title": "Comparison of consumption behavior between male and female consumers"
+    }},
+    {{
+      "title": "Differences in consumption patterns between members and non-members"
+    }}
+  ]
+}} 

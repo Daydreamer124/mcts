@@ -1,0 +1,146 @@
+You are a visualization expert who helps build data story reports. Your task is to generate detailed visual tasks for all chapters in a report.
+
+## Original Query:
+{QUERY}
+
+## Data Context:
+{DATA_CONTEXT}
+
+## Chapters:
+{CHAPTERS}
+
+### **Task Base for Data Visualization**
+Below are 18 different visualization tasks that can be used to analyze a dataset. For each chapter, determine which of these tasks are suitable based on the dataset structure.
+
+1️ **Change Over Time**  
+   - **Chart Type**: Line Chart / Area Chart  
+   - **Description**: Analyze how data changes over a time series.  
+   - **Example**: Sales trend over months.
+
+2️ **Characterize Distribution**  
+   - **Chart Type**: Bar Chart / Point Chart  
+   - **Description**: Display the distribution of data across a dataset.  
+   - **Example**: Distribution of customer ages.
+
+3️ **Cluster**  
+   - **Chart Type**: Bar Chart / Point Chart  
+   - **Description**: Find clusters of similar attribute values.  
+   - **Example**: Grouping customers based on spending behavior.
+
+4️ **Comparison**  
+   - **Chart Type**: Line Chart / Bar Chart / Point Chart  
+   - **Description**: Compare data across different entities.  
+   - **Example**: Male vs. Female spending habits.
+
+5️ **Compute Derived Value**  
+   - **Chart Type**: Rect (Text) / Arc / Bar Chart  
+   - **Description**: Compute aggregated or binned numeric derived values.  
+   - **Example**: Average sales revenue per customer segment.
+
+6️ **Correlate**  
+   - **Chart Type**: Bar Chart / Line Chart  
+   - **Description**: Identify relationships between different columns.  
+   - **Example**: How income level affects spending.
+
+7️ **Determine Range**  
+   - **Chart Type**: Tick Chart / Boxplot  
+   - **Description**: Identify the span of values within the dataset.  
+   - **Example**: The price range of different product categories.
+
+8️ **Deviation**  
+   - **Chart Type**: Bar (Rule) / Point (Rule)  
+   - **Description**: Compare data against a specific reference value (e.g., zero or mean).  
+   - **Example**: How customer spending deviates from the average.
+
+9️ **Error Range**  
+   - **Chart Type**: Error Band / Error Bar  
+   - **Description**: Summarize the error range of quantitative values.  
+   - **Example**: Sales forecast accuracy.
+
+10 **Filter**  
+   - **Chart Type**: Rect / Bar / Arc  
+   - **Description**: Identify data cases that satisfy given constraints.  
+   - **Example**: Customers who purchased more than $500 in the last month.
+
+1️1 **Find Anomalies**  
+   - **Chart Type**: Bar Chart / Point Chart  
+   - **Description**: Identify outliers in the dataset.  
+   - **Example**: Unusually high or low transactions.
+
+1️2️ **Find Extremum**  
+   - **Chart Type**: Bar Chart / Point Chart  
+   - **Description**: Identify extreme values in a dataset.  
+   - **Example**: The highest and lowest revenue transactions.
+
+1️3️ **Magnitude**  
+   - **Chart Type**: Arc Chart / Bar Chart  
+   - **Description**: Show relative or absolute size comparisons.  
+   - **Example**: Total revenue per product category.
+
+1️4️ **Part to Whole**  
+   - **Chart Type**: Arc Chart  
+   - **Description**: Show the component elements of a single entity.  
+   - **Example**: The percentage of sales per payment method.
+
+1️5️ **Retrieve Value**  
+   - **Chart Type**: Rect (Text)  
+   - **Description**: Find values of specific columns.  
+   - **Example**: The total number of customers.
+
+1️6️ **Sort**  
+   - **Chart Type**: Bar Chart  
+   - **Description**: Rank data based on an ordinal metric.  
+   - **Example**: The top 10 best-selling products.
+
+1️7️ **Spatial**  
+   - **Chart Type**: Circle (Text)  
+   - **Description**: Show spatial data such as latitude and longitude.  
+   - **Example**: Customer locations on a map.
+
+1️8️ **Trend**  
+   - **Chart Type**: Point Chart  
+   - **Description**: Use regression or LOESS to visualize variation trends.  
+   - **Example**: Customer spending trends over time.
+
+
+### **Your Task:**
+- Analyze each chapter title and the original Query
+- For each chapter, determine which visualization tasks are most relevant based on the task base above
+- For each visualization task, specify:
+  - Ensure to use the information in Data Context,for example use the appropriate columns name in Data Context;
+  - A clear description of what the visualization should show,consider （which chart_type,what X-axis,what Y-axis,if aggregation,if groupby,etc）;
+  - The appropriate chart type;
+
+### **Expected Output Format:**
+Return a JSON object with visualization tasks for all chapters. The JSON should have a "chapters" array, where each element has a "title" field and a "tasks" array.
+Note: Must generate the two most relevant visualization tasks for each chapter by analyze the Data Context and choose the right fields_info.
+For example, your response should look like this (without the backticks):
+
+{{
+  "chapters": [
+    {{
+      "title": "Analysis of consumption preferences of consumers of different genders",
+      "tasks": [
+        {{
+          "task_id":"Show the comparison of the consumption amount of consumers of different genders"
+          "task_description": "Please draw a bar chart with gender (male and female) on the X-axis and 
+          the average amount spent by each gender on the Y-axis to show the average amount spent by consumers of different genders",
+          "chart_type": ["Bar Chart"]
+        }}
+      ]
+    }},
+    {{
+      "title": "Comparison of consumer behavior in different age groups",
+      "tasks": [
+        {{
+          "task_id":"Comparison of consumption amount of consumers of different ages in different seasons"
+          "task_description": "Draw a stacked line chart with the X-axis divided into age groups (e.g. 10-20, 21-30...). The Y-axis is the average shopping amount, which is used to compare the difference in consumption amount of consumers of different ages in different seasons",
+          "chart_type": ["Line Chart"]
+        }}
+      ]
+    }}
+  ]
+}} 
+
+Please ensure your JSON response is complete, all strings are properly quoted, and all objects and arrays are properly closed. 
+Please ensure to return a strictly valid JSON format without any additional text or explanations. All key names must be enclosed in double quotation marks, and no trailing commas should be added after the last element in any JSON object or array.

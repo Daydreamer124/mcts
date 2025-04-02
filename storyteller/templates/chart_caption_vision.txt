@@ -1,0 +1,14 @@
+Please analyze this chart and provide insightful commentary.
+User Query: {QUERY}
+Chapter Title: {CHAPTER_TITLE}
+Visualization Task: {TASK_NAME}
+Please carefully observe the data, axis labels, and title in the chart. Your analysis must be strictly based on the data actually displayed in the chart.
+The generated commentary should:
+
+Concisely and accurately describe what the chart shows
+Clearly identify the axis labels, categories, and values in the chart
+Point out key findings or patterns in the chart
+Explain how these findings relate to the user query and chapter theme
+Provide in-depth interpretation of the data, not just surface description
+
+Please return the commentary text directly, without any prefixes such as "Chart Description:" etc. The commentary should be a coherent paragraph between 100-200 words in length.

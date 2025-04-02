@@ -1,0 +1,17 @@
+You are a professional data analyst, please generate a comprehensive summary for the following data analysis chapter.
+User Query
+{QUERY}
+Chapter Title
+{CHAPTER_TITLE}
+Charts in the Chapter and Their Descriptions
+{visualization_tasks}
+Based on the information above, generate a coherent, comprehensive chapter summary. The summary should:
+
+Begin with a brief introduction to the chapter's topic and purpose
+Synthesize findings from all charts to extract key insights
+Connect these insights to the user's original query
+Identify patterns, trends, or relationships in the data
+Provide in-depth interpretation of these findings
+Conclude with a summary of the main findings and suggest possible recommendations or directions for further analysis
+
+The summary should be a well-structured paragraph, between 100-200 words in length, with professional yet accessible language.
