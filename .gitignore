@@ -1,5 +1,6 @@
 storyteller/output/
-
+storyteller/test_output
+storyteller/tests
 # Python
 __pycache__/
 *.py[cod]
