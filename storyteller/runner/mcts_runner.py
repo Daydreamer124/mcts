@@ -128,12 +128,12 @@ class DataStorytellingRunner:
             
             # 添加章节总结
             if hasattr(chapter, 'summary') and chapter.summary:
-                markdown.append("\n### 章节小结\n")
+                markdown.append("\n### Chapter Summary\n")
                 markdown.append(chapter.summary + "\n")
         
         # 4. 报告总结（结尾）
         if hasattr(final_node.report, 'brief_conclusion') and final_node.report.brief_conclusion:
-            markdown.append("\n## 总结与建议\n")
+            markdown.append("\n## Conclusion and Suggestions\n")
             markdown.append(final_node.report.brief_conclusion + "\n")
         
         return "\n".join(markdown)

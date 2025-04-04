@@ -4,6 +4,7 @@ import copy
 import os
 import json
 import sys
+import subprocess
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from urllib.parse import quote
@@ -253,9 +254,36 @@ class DataStorytellingMCTSSolver:
                 f.write(html_report)
             print(f"✅ HTML 报告已保存到: {html_path}")
             
-            # 转换为图片
-            image_path = convert_html_file_to_image(html_path)
-            print(f"✅ 报告图片已保存到: {image_path}")
+            # 获取 process_all_reports.py 的路径
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            process_script = os.path.join(script_dir, "utils", "process_all_reports.py")
+            
+            # 使用 process_all_reports.py 生成所有模板风格的报告
+            try:
+                print(f"正在为 {iteration_dir} 生成所有风格的报告...")
+                subprocess.run([
+                    'python', 
+                    process_script,  # 使用完整路径
+                    '--all',
+                    '--dir', iteration_dir
+                ], check=True)
+                print(f"已生成所有模板风格的报告到 {iteration_dir}")
+                
+                # 获取所有生成的HTML文件
+                html_files = [f for f in os.listdir(iteration_dir) if f.endswith('.html')]
+                if html_files:
+                    # 随机选择一个HTML文件
+                    selected_html = random.choice(html_files)
+                    selected_html_path = os.path.join(iteration_dir, selected_html)
+                    print(f"\n🎲 随机选择 {selected_html} 转换为PNG...")
+                    
+                    # 转换为PNG
+                    png_path = os.path.splitext(selected_html_path)[0] + ".png"
+                    convert_html_file_to_image(selected_html_path, png_path)
+                    print(f"✅ PNG文件已生成: {png_path}")
+                
+            except Exception as e:
+                print(f"生成多样式报告时出错: {e}")
             
             try:
                 # 计算基础奖励
@@ -265,7 +293,7 @@ class DataStorytellingMCTSSolver:
                 
                 try:
                     # 计算质量奖励
-                    quality_reward = self.reward_model._compute_quality_reward(current, html_path, image_path)
+                    quality_reward = self.reward_model._compute_quality_reward(current, html_path, png_path)
                     self.reward_model.last_quality_reward = quality_reward
                     print(f"✓ 质量奖励计算完成: {quality_reward:.2f}")
                 except Exception as e:
@@ -547,7 +575,7 @@ class DataStorytellingMCTSSolver:
             
             # 添加章节总结
             if hasattr(chapter, 'summary') and chapter.summary:
-                markdown.append("\n### 章节小结\n")
+                markdown.append("\n### Chapter Summary\n")
                 markdown.append(chapter.summary + "\n")
         
         # 4. 报告总结
@@ -559,14 +587,37 @@ class DataStorytellingMCTSSolver:
 
     def _generate_html_report(self, markdown_content: str, output_dir: str) -> str:
         """
-        将 Markdown 内容转换为 HTML 报告
+        将 Markdown 内容转换为 HTML 报告，并生成所有模板风格的报告
         """
         import markdown
         import os
         import re
+        import subprocess
+        import json
+        import random
         
         # 创建 HTML 文件路径
         html_file = os.path.join(output_dir, "report.html")
+        md_file = os.path.join(output_dir, "report.md")
+        
+        # 修复标题格式问题，将JSON/字典格式的标题转换为纯文本
+        def fix_titles(content):
+            # 匹配 ## {'title': 'Something'} 格式
+            pattern1 = r'(#+)\s*({\'title\':\s*\'(.*?)\'})' 
+            content = re.sub(pattern1, r'\1 \3', content)
+            
+            # 匹配 ## {"title": "Something"} 格式
+            pattern2 = r'(#+)\s*({\"title\":\s*\"(.*?)\"})' 
+            content = re.sub(pattern2, r'\1 \3', content)
+            
+            return content
+        
+        # 修复标题
+        markdown_content = fix_titles(markdown_content)
+        
+        # 保存修复后的markdown内容到文件
+        with open(md_file, 'w', encoding='utf-8') as f:
+            f.write(markdown_content)
         
         # 修复图片路径
         def fix_image_paths(content):
@@ -653,5 +704,36 @@ class DataStorytellingMCTSSolver:
         </body>
         </html>
         """
+        
+        # 获取 process_all_reports.py 的路径
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        process_script = os.path.join(script_dir, "utils", "process_all_reports.py")
+        
+        # 使用 process_all_reports.py 生成所有模板风格的报告
+        try:
+            print(f"正在为 {output_dir} 生成所有风格的报告...")
+            subprocess.run([
+                'python', 
+                process_script,  # 使用完整路径
+                '--all',
+                '--dir', output_dir
+            ], check=True)
+            print(f"已生成所有模板风格的报告到 {output_dir}")
+            
+            # 获取所有生成的HTML文件
+            html_files = [f for f in os.listdir(output_dir) if f.endswith('.html')]
+            if html_files:
+                # 随机选择一个HTML文件
+                selected_html = random.choice(html_files)
+                selected_html_path = os.path.join(output_dir, selected_html)
+                print(f"\n🎲 随机选择 {selected_html} 转换为PNG...")
+                
+                # 转换为PNG
+                png_path = os.path.splitext(selected_html_path)[0] + ".png"
+                convert_html_file_to_image(selected_html_path, png_path)
+                print(f"✅ PNG文件已生成: {png_path}")
+            
+        except Exception as e:
+            print(f"生成多样式报告时出错: {e}")
         
         return html_content

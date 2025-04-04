@@ -11,7 +11,7 @@ import pandas as pd
 from enum import Enum
 import base64
 from PIL import Image
-import io
+import io,requests
 from openai import OpenAI
 from .utils.html2image import convert_html_file_to_image
 from storyteller.algorithm.mcts_node import ReportGenerationState
@@ -168,7 +168,7 @@ class Chapters2Tasks(DataStorytellingAction):
             
             # 为每个章节方案创建2-3个不同的任务方案子节点
             # 创建基础节点的多个副本
-            for variant_idx in range(1):  # 生成3个不同的任务方案变体
+            for variant_idx in range(3):  # 生成3个不同的任务方案变体
                 # 创建子节点
                 child_node = copy.deepcopy(node)
                 child_node.parent_node = node
@@ -427,6 +427,17 @@ class Tasks2Charts(DataStorytellingAction):
         child_node.depth = node.depth + 1
 
         try:
+            # 递增迭代号 - 确保每次创建新节点时迭代号加1
+            child_node.report.current_iteration += 1
+            current_iteration = child_node.report.current_iteration
+            print(f"✅ 当前迭代号: {current_iteration}")
+            
+            # 确定当前迭代号和保存路径
+            iteration_dir = os.path.join("storyteller", "output", "iterations", f"iteration_{current_iteration}")
+            os.makedirs(iteration_dir, exist_ok=True)
+            charts_dir = os.path.join(iteration_dir, "charts")
+            os.makedirs(charts_dir, exist_ok=True)
+            
             # 获取数据集
             dataset_path = node.report.dataset_path
             df = pd.read_csv(dataset_path)
@@ -457,13 +468,6 @@ class Tasks2Charts(DataStorytellingAction):
                     task_id = task.get('task_id', "")
                     description = task.get('task_description')
                     chart_type = task.get('chart_type', ["Bar Chart"])[0]
-                    
-                    # 确定当前迭代号和保存路径
-                    current_iteration = node.report.current_iteration or 1
-                    iteration_dir = os.path.join("storyteller", "output", "iterations", f"iteration_{current_iteration}")
-                    os.makedirs(iteration_dir, exist_ok=True)
-                    charts_dir = os.path.join(iteration_dir, "charts")
-                    os.makedirs(charts_dir, exist_ok=True)
 
                     # 使用任务ID作为文件名，如果为空则使用任务描述
                     file_name = task_id if task_id else description
@@ -508,7 +512,11 @@ class Tasks2Charts(DataStorytellingAction):
                     )
                     
                     # 创建自定义的文本生成器
-                    text_gen = llm(provider="openai", model="gpt-4")
+                    #text_gen = llm(provider="openai", model="gpt-4-32k")
+                    text_gen = llm(
+                        provider="openai", 
+                        model="gpt-4-32k"
+                    )
 
                     # 创建 LIDA 管理器
                     manager = Manager(text_gen=text_gen)
@@ -704,7 +712,7 @@ class ReviseVis(DataStorytellingAction):
                         from lida.datamodel import Summary
                         
                         # 创建自定义的文本生成器
-                        text_gen = llm(provider="openai", model="gpt-4o-2024-05-13")
+                        text_gen = llm(provider="openai", model="gpt-4-32k")
                         manager = Manager(text_gen=text_gen)
                         
                         # 读取数据摘要 JSON 文件
@@ -889,23 +897,55 @@ class Charts2Captions(DataStorytellingAction):
                     }
                     prompt = get_prompt("chart_caption", prompt_args)
                     
-                    try:
-                        client = OpenAI(
-                            api_key=llm_kwargs.get("api_key"),
-                            base_url=llm_kwargs.get("base_url")
-                        )
+                    # try:
+                    #     client = OpenAI(
+                    #         api_key=llm_kwargs.get("api_key"),
+                    #         base_url=llm_kwargs.get("base_url")
+                    #     )
                         
-                        response = client.chat.completions.create(
-                            model=llm_kwargs.get("model", "gpt-4o"),
-                            messages=[
+                    #     response = client.chat.completions.create(
+                    #         model="gpt-4o-turbo",
+                    #         messages=[
+                    #             {
+                    #                 "role": "system",
+                    #                 "content": "You are a data visualization expert. Your task is to analyze this chart and provide insight with the following information."
+                    #             },
+                    #             {
+                    #                 "role": "user",
+                    #                 "content": [
+                    #                     {"type": "text", "text": prompt},
+                    #                     {
+                    #                         "type": "image_url",
+                    #                         "image_url": {
+                    #                             "url": f"data:image/png;base64,{base64_image}"
+                    #                         }
+                    #                     }
+                    #                 ]
+                    #             }
+                    #         ],
+                    #         temperature=0.3,
+                    #         max_tokens=2048
+                    #     )
+                    try:
+                        url = "https://gpt-api.hkust-gz.edu.cn/v1/chat/completions"
+                        headers = {
+                            "Content-Type": "application/json",
+                            "Authorization": "7ca9f48d315049bbad0b355afcd5f3a147a8395e46f249e3b7890ffa9ca5122c" #Please change your KEY. If your key is XXX, the Authorization is "Authorization": "Bearer XXX"
+                        }
+                        data = {
+                            "model": "gpt-4-turbo", #使用支持图像识别的模型
+                            "messages": [
                                 {
                                     "role": "system",
-                                    "content": "You are a data visualization expert. Your task is to analyze this chart and provide insight with the following information."
+                                    "content": "You are a data visualization expert."
                                 },
                                 {
                                     "role": "user",
                                     "content": [
-                                        {"type": "text", "text": prompt},
+                                        {
+                                            "type": "text",
+                                            "text":prompt
+                                        },
                                         {
                                             "type": "image_url",
                                             "image_url": {
@@ -913,16 +953,22 @@ class Charts2Captions(DataStorytellingAction):
                                             }
                                         }
                                     ]
-                                }
+                                }   
                             ],
-                            temperature=0.3
-                        )
-                        
+                            "temperature": 0.8,
+                            "max_tokens": 2048 #max_tokens is Required.Since the default value of max_tokens is 16, which results in the inability of the GPT to display complete answers.
+                        #stream is not available in gpt-4 vision.
+                        }
+                        response = requests.post(url, headers=headers, data=json.dumps(data))
+                        print(response.json())
                         # 处理响应
                         if isinstance(response, str):
                             caption = response.strip()
                         else:
-                            caption = response.choices[0].message.content.strip()
+                            # 获取响应JSON并提取内容
+                            #caption = response.choices[0].message.content.strip()  一展用法
+                            response_json = response.json() #学校api用法
+                            caption = response_json['choices'][0]['message']['content'].strip() ##学校api用法
                         
                         # 清理响应内容
                         clean_caption = self.clean_response(caption)
