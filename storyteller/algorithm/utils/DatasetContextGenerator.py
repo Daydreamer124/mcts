@@ -73,32 +73,51 @@ class DatasetContextGenerator:
         # **1️⃣ 计算类别列 & 数值列**
         data_types, categorical_columns, category_distribution, numerical_columns = self._analyze_columns(data)
 
-        # **2️⃣ 一次 LLM 调用生成【完整列名】+【数据集摘要】**
-        llm_result = self._generate_column_names_and_summary(
+        # **2️⃣ 一次 LLM 调用生成【完整列名】+【数据集摘要】+【英文列名映射】**
+        llm_result = self._generate_column_names_and_summary_with_english_mapping(
             dataset_name, total_rows, total_columns, column_names, sample_data, data_types, categorical_columns, numerical_columns
         )
 
         full_column_names = llm_result.get("full_column_names", {col: col for col in column_names})
         dataset_summary = llm_result.get("dataset_summary", "暂无摘要信息")
+        english_column_mapping = llm_result.get("english_column_mapping", {})
+
+        # 字段语义类型映射
+        field_semantic_types = self._generate_field_semantic_types(data, categorical_columns, numerical_columns)
 
         # **3️⃣ 组织 JSON 结构**
         dataset_context = {
-            "dataset_name": dataset_name,
-            "dataset_description": dataset_description,  # 用户提供
+            "name": dataset_name,
+            "dataset_description": dataset_description or dataset_summary,  # 用户提供或LLM生成
             "total_rows": total_rows,
             "total_columns": total_columns,
-            "column_names": column_names,
-            "full_column_names": full_column_names,  # 由 LLM 生成
-            "data_types": data_types,
-            "categorical_columns": categorical_columns,
-            "category_distribution": category_distribution,
-            "numerical_columns": numerical_columns,
-            "dataset_summary": dataset_summary  # 由 LLM 生成
+            "fields_info": {
+                col: {
+                    "dtype": data_types.get(col, "unknown"),
+                    "num_unique_values": categorical_columns.get(col, 0) if col in categorical_columns else (0 if col not in numerical_columns else None),
+                    "missing_values": int(data[col].isna().sum()),
+                    "semantic_type": field_semantic_types.get(col, "UNKNOWN"),
+                    "english_name": english_column_mapping.get(col, col)  # 使用LLM生成的英文列名
+                }
+                for col in column_names
+            },
+            "categorical_details": {
+                col: {
+                    "unique_values": {str(k): int(v*data.shape[0]) for k, v in category_distribution.get(col, {}).items()},
+                    "total_categories": categorical_columns.get(col, 0)
+                }
+                for col in categorical_columns
+            },
+            "numerical_details": {
+                col: numerical_columns[col]
+                for col in numerical_columns
+            },
+            "english_column_mapping": english_column_mapping  # 添加整体的英文列名映射
         }
 
         return dataset_context
     
-    def _generate_column_names_and_summary(
+    def _generate_column_names_and_summary_with_english_mapping(
             self,
             dataset_name: str,
             total_rows: int,
@@ -109,7 +128,7 @@ class DatasetContextGenerator:
             categorical_columns: Dict[str, int],
             numerical_columns: Dict[str, Dict[str, float]]
         ) -> Dict:
-        """**一次性调用 LLM 生成完整列名 + 数据集摘要**"""
+        """**一次性调用 LLM 生成完整列名 + 数据集摘要 + 英文列名映射**"""
         prompt = f"""
         数据集名称：{dataset_name}
         该数据集包含 {total_rows} 行，{total_columns} 列。
@@ -139,6 +158,14 @@ class DatasetContextGenerator:
         - 重要的类别列及其类别数量
         - 重要的数值列的取值范围
 
+        3️⃣ **为所有中文列名创建准确的英文映射**，这对于数据可视化非常重要。必须为每个列名生成对应的英文名称，确保映射合理且与数据内容相符。例如：
+        - "年龄" → "Age"
+        - "性别" → "Gender"
+        - "收入" → "Income"
+        - "区域" → "Region"
+        - "省份" → "Province"
+        - "市" → "City" 
+
         **请直接返回 JSON 格式**：
         ```json
         {{
@@ -146,13 +173,49 @@ class DatasetContextGenerator:
                 "age": "用户年龄（years）",
                 "revenue": "订单收入（USD）"
             }},
-            "dataset_summary": "数据集包含某某信息..."
+            "dataset_summary": "数据集包含某某信息...",
+            "english_column_mapping": {{
+                "年龄": "Age",
+                "性别": "Gender",
+                "区域": "Region",
+                "省份": "Province",
+                "市": "City"
+            }}
         }}
         ```
         """
 
         response = self._call_openai_api(prompt)
-        return self._parse_json(response, default={"full_column_names": {col: col for col in column_names}, "dataset_summary": "暂无摘要信息"})
+        default = {
+            "full_column_names": {col: col for col in column_names}, 
+            "dataset_summary": "暂无摘要信息",
+            "english_column_mapping": {}
+        }
+        return self._parse_json(response, default=default)
+
+    def _generate_field_semantic_types(self, data: pd.DataFrame, categorical_columns: Dict, numerical_columns: Dict) -> Dict:
+        """为每个字段生成语义类型"""
+        semantic_types = {}
+        
+        for col in data.columns:
+            if col in categorical_columns:
+                # 特殊类型检测
+                if col.lower() in ['id', 'code', 'no', 'number', '编号', '代码', '序号'] or 'id' in col.lower():
+                    semantic_types[col] = "ID"
+                elif col.lower() in ['date', 'time', 'datetime', 'timestamp', '日期', '时间'] or '日期' in col.lower() or '时间' in col.lower():
+                    semantic_types[col] = "DATETIME"
+                else:
+                    semantic_types[col] = "CATEGORY"
+            elif col in numerical_columns:
+                # ID检测
+                if col.lower() in ['id', 'code', 'no', 'number', '编号', '代码', '序号'] or 'id' in col.lower():
+                    semantic_types[col] = "ID"
+                else:
+                    semantic_types[col] = "NUMERIC"
+            else:
+                semantic_types[col] = "UNKNOWN"
+                
+        return semantic_types
 
     def _call_openai_api(self, prompt: str) -> str:
         """调用 OpenAI API（兼容新版 API）"""
@@ -172,7 +235,7 @@ class DatasetContextGenerator:
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0,
-                    max_tokens=1000
+                    max_tokens=8000
                 )
                 
                 # 处理响应

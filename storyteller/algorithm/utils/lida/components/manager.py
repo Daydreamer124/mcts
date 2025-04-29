@@ -63,7 +63,8 @@ class Manager(object):
         summary,
         goal,
         textgen_config: TextGenerationConfig = TextGenerationConfig(),
-        library="seaborn",
+        #library="seaborn",
+        library="matplotlib",
         return_error: bool = False,
     ):
         if isinstance(goal, dict):

@@ -199,7 +199,7 @@ class Chapters2Tasks(DataStorytellingAction):
                     # 如果title属性是字符串或其他类型
                     title_text = title_attr if title_attr else f"章节{i+1}"
             
-            chapters_list.append(title_text)
+            chapters_list.append({"title": title_text})
         
         # 生成 LLM 提示词
         prompt_args = {
@@ -672,7 +672,7 @@ class Tasks2Charts(DataStorytellingAction):
             os.makedirs(iteration_dir, exist_ok=True)
             charts_dir = os.path.join(iteration_dir, "charts")
             os.makedirs(charts_dir, exist_ok=True)
-           
+          
             # 创建一个额外的 JSON 配置目录
             json_dir = os.path.join(iteration_dir, "chart_configs")
             os.makedirs(json_dir, exist_ok=True)
@@ -775,7 +775,7 @@ class Tasks2Charts(DataStorytellingAction):
                         if hasattr(visualization, 'savefig'):
                             visualization.savefig(chart_path)
                             print(f"✓ 图表已保存到: {chart_path}")
-                            
+                                                   
                             # 额外生成 Chart.js 配置 JSON 文件
                             try:
                                 # 提取图表使用的实际数据
@@ -816,19 +816,19 @@ class Tasks2Charts(DataStorytellingAction):
                                 elif hasattr(visualization, 'data') and isinstance(visualization.data, pd.DataFrame):
                                     visualization.data.to_csv(csv_path, index=False)
                                     print(f"✓ 图表数据已保存到: {csv_path}")
-                                # else:
+                                else:
                                     # 尝试从代码中提取和分析数据
-                                    #last_df_var = self._find_last_dataframe_variable(visualization.code)
-                                    #if last_df_var:
+                                    last_df_var = self._find_last_dataframe_variable(visualization.code)
+                                    if last_df_var:
                                         # 这里我们无法直接访问代码中的变量
                                         # 所以只能保存一个指示文件，提示chart_config使用什么变量
-                                        #with open(csv_path + ".info", "w") as f:
-                                        #    f.write(f"Last DataFrame variable: {last_df_var}")
-                                        #print(f"✓ 图表数据变量信息已保存: {last_df_var}")
+                                        with open(csv_path + ".info", "w") as f:
+                                            f.write(f"Last DataFrame variable: {last_df_var}")
+                                        print(f"✓ 图表数据变量信息已保存: {last_df_var}")
                             except Exception as e:
                                 print(f"⚠️ 保存图表数据 CSV 时出错: {str(e)}")
                                 traceback.print_exc()
-                            
+        
                             # 检查图表相似度
                             if self.use_similarity_check and all_charts:
                                 # 收集已有图表的路径列表
@@ -1049,16 +1049,16 @@ class Tasks2Charts(DataStorytellingAction):
                 series_field = chart_config.get('seriesField', None)
                 if series_field:
                     print(f"- 分组字段: {series_field}")
-                    print(f"- 是否堆叠: {'是' if chart_config.get('isStack', False) else '否'}")
-                else:
-                    print(f"\n✓ 成功生成Chart.js配置:")
-                    print(f"- 图表类型: {chart_config['chart_type']}")
-                    print(f"- 图表标题: {chart_config['title']}")
-                    print(f"- X轴字段: {chart_config.get('x_field', '')}")
-                    print(f"- Y轴字段: {chart_config.get('y_field', '')}")
-                    print(f"- 数据点数量: {len(chart_config['data']['labels'])}")
-                    print(f"- 数据集数量: {len(chart_config['data']['datasets'])}")
-                    print(f"- 是否堆叠柱状图: {'是' if chart_config.get('options', {}).get('scales', {}).get('y', {}).get('stacked', False) else '否'}")
+                print(f"- 是否堆叠: {'是' if chart_config.get('isStack', False) else '否'}")
+            else:
+                print(f"\n✓ 成功生成Chart.js配置:")
+                print(f"- 图表类型: {chart_config['chart_type']}")
+                print(f"- 图表标题: {chart_config['title']}")
+                print(f"- X轴字段: {chart_config.get('x_field', '')}")
+                print(f"- Y轴字段: {chart_config.get('y_field', '')}")
+                print(f"- 数据点数量: {len(chart_config['data']['labels'])}")
+                print(f"- 数据集数量: {len(chart_config['data']['datasets'])}")
+                print(f"- 是否堆叠柱状图: {'是' if chart_config.get('options', {}).get('scales', {}).get('y', {}).get('stacked', False) else '否'}")
             
         except Exception as e:
             print(f"⚠️ 提取图表配置时出错: {str(e)}")
@@ -1069,6 +1069,882 @@ class Tasks2Charts(DataStorytellingAction):
             chart_config = self._extract_chart_config_fallback(visualization, task_id, description, df, use_antv)
         
         return chart_config
+    
+    def _extract_chart_config_fallback(self, visualization, task_id, description, df, use_antv=False):
+        """原始的图表配置提取方法，作为回退机制
+        
+        参数:
+            visualization: 包含可视化代码的字典
+            task_id: 任务ID
+            description: 任务描述
+            df: 数据DataFrame
+            use_antv: 是否使用AntV G2配置（默认为False，使用Chart.js）
+        """
+        chart_config = {}
+        
+        try:
+            code = visualization.code
+            
+            # 初始化基本变量
+            x_field = None
+            y_field = None
+            has_hue = False
+            hue_field = None
+            is_histogram_chart = False
+            is_multi_series = False  # 标记是否为多系列数据
+            is_stacked_bar = False   # 标记是否为堆叠柱状图
+            
+            # 解析可视化代码以提取关键信息
+            # 默认图表类型
+            chart_type = "bar"
+            
+            # 尝试确定图表类型
+            if 'plt.bar(' in code or '.plot.bar(' in code or 'kind="bar"' in code or "kind='bar'" in code:
+                chart_type = "bar"
+                # 检查是否是堆叠柱状图
+                if 'stacked=True' in code or 'stacked=True,' in code or "stacked=True)" in code:
+                    is_stacked_bar = True
+                    print("📊 检测到堆叠柱状图")
+            elif 'plt.line(' in code or '.plot(' in code and not '.plot.bar(' in code or 'kind="line"' in code or "kind='line'" in code:
+                chart_type = "line"
+            elif 'plt.scatter(' in code or '.plot.scatter(' in code or 'kind="scatter"' in code or "kind='scatter'" in code:
+                chart_type = "scatter"
+            elif 'plt.pie(' in code or 'kind="pie"' in code or "kind='pie'" in code:
+                chart_type = "pie"
+            elif 'plt.hist(' in code or 'kind="hist"' in code or "kind='hist'" in code:
+                chart_type = "bar"  # 直方图在 Chart.js 中使用 bar
+            
+            # 直接从plt.xlabel和plt.ylabel提取轴标签
+            xlabel_match = re.search(r'plt\.xlabel\([\'"]([^\'"]+)[\'"]\)', code)
+            if xlabel_match:
+                x_field = xlabel_match.group(1)
+                print(f"📊 从plt.xlabel直接提取x轴标题: {x_field}")
+            
+                ylabel_match = re.search(r'plt\.ylabel\([\'"]([^\'"]+)[\'"]\)', code)
+                if ylabel_match:
+                    y_field = ylabel_match.group(1)
+                print(f"📊 从plt.ylabel直接提取y轴标题: {y_field}")
+            
+            # 从sns绘图中提取轴标签
+            if not x_field:
+                sns_xlabel = re.search(r'ax\.set_xlabel\([\'"]([^\'"]+)[\'"]\)', code)
+                if sns_xlabel:
+                    x_field = sns_xlabel.group(1)
+                    print(f"📊 从sns绘图中提取x轴标题: {x_field}")
+            
+            if not y_field:
+                sns_ylabel = re.search(r'ax\.set_ylabel\([\'"]([^\'"]+)[\'"]\)', code)
+                if sns_ylabel:
+                    y_field = sns_ylabel.group(1)
+                    print(f"📊 从sns绘图中提取y轴标题: {y_field}")
+            
+            # 从图表标题提取信息
+            title = ""
+            title_match = re.search(r'plt\.title\([\'"]([^\'"]+)[\'"]\)', code)
+            if title_match:
+                title = title_match.group(1)
+                print(f"📊 从plt.title提取图表标题: {title}")
+            else:
+                # 尝试从ax.set_title提取
+                ax_title_match = re.search(r'ax\.set_title\([\'"]([^\'"]+)[\'"]\)', code)
+                if ax_title_match:
+                    title = ax_title_match.group(1)
+                    print(f"📊 从ax.set_title提取图表标题: {title}")
+                else:
+                    # 使用任务描述作为图表标题
+                    title = description
+                    print(f"⚠️ 未找到图表标题，使用任务描述: {title}")
+            
+            # 检查是否使用了hue参数 (分组)
+            hue_match = re.search(r'hue=[\'"]([^\'"]+)[\'"]', code)
+            if hue_match:
+                has_hue = True
+                hue_field = hue_match.group(1)
+                is_multi_series = True
+                print(f"📊 检测到hue参数: {hue_field}")
+            
+            # 检查.groupby()调用，可能表示分组
+            groupby_match = re.search(r'\.groupby\(\[[\'"]([^\'"]+)[\'"](?:,\s*[\'"]([^\'"]+)[\'"])?\]', code)
+            if groupby_match:
+                group_fields = [groupby_match.group(1)]
+                if groupby_match.group(2):
+                    group_fields.append(groupby_match.group(2))
+                
+                print(f"📊 检测到groupby分组字段: {', '.join(group_fields)}")
+                if not x_field and len(group_fields) > 0:
+                    x_field = group_fields[0]
+                    print(f"📊 使用第一个groupby字段作为x轴: {x_field}")
+                
+                # 如果有多个分组字段，第二个可能是hue
+                if len(group_fields) > 1 and not has_hue:
+                    has_hue = True
+                    hue_field = group_fields[1]
+                    is_multi_series = True
+                    print(f"📊 使用第二个groupby字段作为hue: {hue_field}")
+            
+            # 检查是否有pd.crosstab调用，这通常用于多系列数据
+            crosstab_match = re.search(r'pd\.crosstab\(([^,]+),\s*([^,\)]+)', code)
+            if crosstab_match:
+                is_multi_series = True
+                if not x_field:
+                    x_field_expr = crosstab_match.group(1).strip()
+                    if "df[" in x_field_expr:
+                        col_match = re.search(r'df\[[\'"]([^\'"]+)[\'"]\]', x_field_expr)
+                        if col_match:
+                            x_field = col_match.group(1)
+                            print(f"📊 从crosstab提取x轴字段: {x_field}")
+                
+                if not has_hue:
+                    hue_field_expr = crosstab_match.group(2).strip()
+                    if "df[" in hue_field_expr:
+                        col_match = re.search(r'df\[[\'"]([^\'"]+)[\'"]\]', hue_field_expr)
+                        if col_match:
+                            has_hue = True
+                            hue_field = col_match.group(1)
+                            print(f"📊 从crosstab提取hue字段: {hue_field}")
+            
+            # 提取代码中使用的数据变量
+            data_var_match = re.search(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*df\[', code)
+            data_var_name = None
+            if data_var_match:
+                data_var_name = data_var_match.group(1)
+                print(f"📊 找到数据变量名: {data_var_name}")
+            
+            # 尝试从plt.bar或其他绘图函数提取坐标和数据
+            column_name = None
+            
+            # 提取x轴使用的列名
+            x_col_match = re.search(r'df\[[\'"]([^\'"]+)[\'"]\]', code)
+            if x_col_match:
+                column_name = x_col_match.group(1)
+                if not x_field:
+                    x_field = column_name
+                print(f"📊 从代码提取可能的x轴列名: {column_name}")
+            
+            # 检查for循环中的绘图，可能表示多系列数据
+            for_loop_match = re.search(r'for\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+in\s+([a-zA-Z_][a-zA-Z0-9_]*)', code)
+            if for_loop_match:
+                loop_var = for_loop_match.group(1)
+                loop_iterable = for_loop_match.group(2)
+                print(f"📊 检测到for循环: {loop_var} in {loop_iterable}")
+                is_multi_series = True
+            
+            # 检查堆叠条形图特定的代码模式
+            if 'bottom=' in code or '.stack()' in code:
+                is_stacked_bar = True
+                print("📊 检测到堆叠柱状图特征(bottom参数或stack方法)")
+            
+            # 数据预处理逻辑
+            # 1. 提取实际数据标签和值
+            labels = []
+            data_values = []
+            datasets = []
+            
+            # 分析实际使用的列名
+            if x_field and x_field in df.columns:
+                # 从DataFrame中提取实际的x轴标签
+                unique_values = df[x_field].dropna().unique()
+                if len(unique_values) > 0 and len(unique_values) <= 30:  # 限制标签数量
+                    labels = [str(val) for val in unique_values]
+                    print(f"📊 从DataFrame提取x轴实际值: {labels}")
+            
+            # 如果有hue字段，则尝试提取多系列数据
+            if has_hue and hue_field and hue_field in df.columns and x_field and x_field in df.columns:
+                is_multi_series = True
+                
+                # 获取hue字段的唯一值
+                hue_values = df[hue_field].dropna().unique()
+                x_values = df[x_field].dropna().unique()
+                
+                print(f"📊 hue字段'{hue_field}'的唯一值: {hue_values}")
+                print(f"📊 x字段'{x_field}'的唯一值: {x_values}")
+                
+                # 准备标签
+                labels = [str(val) for val in x_values]
+                
+                # 如果是堆叠柱状图，尝试从DataFrame重建数据
+                if is_stacked_bar and y_field:
+                    try:
+                        # 创建交叉表
+                        if y_field in df.columns:
+                            # 尝试创建交叉表，按x_field和hue_field分组，聚合y_field
+                            cross_tab = df.pivot_table(
+                                index=x_field, 
+                                columns=hue_field, 
+                                values=y_field, 
+                                aggfunc='sum'
+                            ).fillna(0)
+                            
+                            # 准备每个系列的数据集
+                            colors = self._get_colors(len(hue_values), 0.7)
+                            border_colors = self._get_colors(len(hue_values), 1.0)
+                            
+                            for i, hue_val in enumerate(cross_tab.columns):
+                                datasets.append({
+                                    "label": str(hue_val),
+                                    "data": cross_tab[hue_val].tolist(),
+                                    "backgroundColor": colors[i],
+                                    "borderColor": border_colors[i],
+                                    "borderWidth": 1
+                                })
+                            
+                            print(f"✓ 成功从DataFrame创建堆叠柱状图数据，包含{len(datasets)}个系列")
+                        else:
+                            print(f"⚠️ y_field '{y_field}' 不在DataFrame列中")   
+                    except Exception as e:
+                        print(f"⚠️ 创建堆叠柱状图数据时出错: {str(e)}")
+                elif is_multi_series:
+                    # 非堆叠图的多系列数据处理
+                    try:
+                        # 为每个hue值创建一个数据集
+                        colors = self._get_colors(len(hue_values), 0.7)
+                        border_colors = self._get_colors(len(hue_values), 1.0)
+                        
+                        for i, hue_val in enumerate(hue_values):
+                            # 过滤数据
+                            filtered_df = df[df[hue_field] == hue_val]
+                            
+                            # 如果有y_field，使用它来聚合数据
+                            if y_field and y_field in df.columns:
+                                agg_data = filtered_df.groupby(x_field)[y_field].sum().reindex(x_values).fillna(0).tolist()
+                            else:
+                                # 否则只计算每个x值的计数
+                                agg_data = filtered_df.groupby(x_field).size().reindex(x_values).fillna(0).tolist()
+                            
+                                datasets.append({
+                                    "label": str(hue_val),
+                                    "data": agg_data,
+                                    "backgroundColor": colors[i],
+                                    "borderColor": border_colors[i],
+                                    "borderWidth": 1
+                                })
+                        
+                        print(f"✓ 成功从DataFrame创建多系列数据，包含{len(datasets)}个系列")
+                    except Exception as e:
+                        print(f"⚠️ 创建多系列数据时出错: {str(e)}")
+            
+            # 标记这是一个直方图/频数统计图表
+            is_histogram_chart = 'plt.hist(' in code or 'sns.histplot' in code or 'kind="hist"' in code
+            
+            # 准备频数分布图表数据
+            if is_histogram_chart and column_name and column_name in df.columns:
+                print(f"📊 数据中存在列 '{column_name}'，生成频数分布")
+                            
+                # 处理带hue参数的countplot（多系列数据）
+                if has_hue and hue_field and hue_field in df.columns:
+                    print(f"📊 使用hue参数 '{hue_field}' 生成分组频数统计")
+                    is_multi_series = True
+                                
+                    # 使用crosstab生成交叉表
+                    cross_tab = pd.crosstab(df[column_name], df[hue_field])
+                                
+                    # 准备多系列数据
+                    labels = cross_tab.index.astype(str).tolist()
+                                
+                    # 为每个hue类别创建一个数据集
+                    datasets = []
+                    hue_categories = cross_tab.columns.tolist()
+                    colors = self._get_colors(len(hue_categories), 0.7)
+                                
+                    for i, hue_cat in enumerate(hue_categories):
+                            datasets.append({
+                            "label": str(hue_cat),
+                            "data": cross_tab[hue_cat].tolist(),
+                            "backgroundColor": colors[i],
+                            "borderColor": colors[i].replace("0.7", "1.0"),
+                            "borderWidth": 1
+                            })
+                else:
+                    # 单系列直方图处理
+                    if not labels and len(df[column_name].dropna().unique()) <= 30:
+                        # 使用唯一值作为标签
+                        labels = [str(val) for val in sorted(df[column_name].dropna().unique())]
+                        # 计算每个值的频率
+                        value_counts = df[column_name].value_counts().reindex(sorted(df[column_name].dropna().unique()))
+                        data_values = value_counts.tolist()
+            
+            # 如果x_field或y_field仍未找到，尝试从其他代码中提取
+            if not x_field or not y_field:
+                # 这里保留原有的提取逻辑
+                pass
+            
+            # 如果labels为空，尝试设置默认值或从DataFrame提取值
+            if not labels:
+                if x_field and x_field in df.columns:
+                    # 尝试从DataFrame列中提取唯一值
+                    unique_values = df[x_field].dropna().unique()
+                    if len(unique_values) <= 30:  # 限制标签数量
+                        labels = [str(val) for val in unique_values]
+                    else:
+                        # 如果唯一值太多，只使用前15个
+                        labels = [str(val) for val in unique_values[:15]]
+                else:
+                    # 默认标签
+                    labels = ["类别1", "类别2", "类别3", "类别4", "类别5"]
+            
+            # 最终构建Chart.js配置
+            chart_config = {
+                "chart_type": chart_type,
+                "title": title,
+                "x_field": x_field,
+                "y_field": y_field,
+                "is_stacked": is_stacked_bar,
+                "data": {
+                    "labels": labels,
+                    "datasets": datasets
+                },
+                "options": {
+                    "responsive": True,
+                    "maintainAspectRatio": False,
+                    "plugins": {
+                        "title": {
+                            "display": True,
+                            "text": title
+                        },
+                        "legend": {
+                            "position": "top",
+                            "display": len(datasets) > 1 or chart_type == 'pie'
+                        },
+                        "tooltip": {
+                            "enabled": True
+                        }
+                    }
+                }
+            }
+            
+            # 添加scales配置（如果不是饼图）
+            if chart_type != "pie":
+                chart_config["options"]["scales"] = {
+                    "y": {
+                        "beginAtZero": True,
+                        "title": {
+                            "display": True,
+                            "text": y_field or "值"
+                        }
+                    },
+                    "x": {
+                        "title": {
+                            "display": True,
+                            "text": x_field or "类别"
+                        }
+                    }
+                }
+                
+            # 如果是堆叠柱状图，设置堆叠选项
+            if is_stacked_bar and chart_type == "bar":
+                chart_config["options"]["scales"]["x"]["stacked"] = True
+                chart_config["options"]["scales"]["y"]["stacked"] = True
+            
+            return chart_config
+
+        except Exception as e:
+            print(f"⚠️ 提取图表配置时出错: {str(e)}")
+            traceback.print_exc()
+            
+            # 创建一个默认配置
+            chart_config = {
+                "chart_type": "bar",
+                "x_field": "undefined",
+                "y_field": "undefined",
+                "title": description,
+                "data": {
+                    "labels": ["类别1", "类别2", "类别3", "类别4", "类别5"],
+                    "datasets": [
+                        {
+                            "label": description,
+                            "data": [5, 10, 15, 7, 12],
+                            "backgroundColor": "rgba(75, 192, 192, 0.2)",
+                            "borderColor": "rgba(75, 192, 192, 1)",
+                            "borderWidth": 1
+                        }
+                    ]
+                },
+                "options": {
+                    "responsive": True,
+                    "maintainAspectRatio": False,
+                    "plugins": {
+                        "title": {
+                            "display": True,
+                            "text": description
+                        }
+                    }
+                }
+            }
+        
+        return chart_config
+
+    def _get_colors(self, length, opacity=0.7):
+        """获取指定数量的颜色，用于图表
+
+        参数:
+            length: 需要的颜色数量
+            opacity: 透明度，0到1之间
+            
+        返回:
+            颜色列表，格式为rgba(r,g,b,a)
+        """
+        # 预定义的美观调色板
+        base_colors = [
+            (54, 162, 235),    # 蓝色
+            (255, 99, 132),    # 红色
+            (75, 192, 192),    # 青色
+            (255, 159, 64),    # 橙色
+            (153, 102, 255),   # 紫色
+            (255, 205, 86),    # 黄色
+            (201, 203, 207),   # 灰色
+            (22, 160, 133),    # 绿松石
+            (142, 68, 173),    # 紫罗兰
+            (241, 196, 15),    # 金色
+            (231, 76, 60),     # 石榴红
+            (52, 152, 219),    # 天蓝
+            (46, 204, 113),    # 祖母绿
+            (155, 89, 182),    # 淡紫色
+            (26, 188, 156),    # 青碧色
+            (192, 57, 43),     # 深红色
+            (41, 128, 185),    # 靛蓝色
+            (39, 174, 96),     # 深绿色
+        ]
+        
+        # 如果需要的颜色数量小于预定义的颜色数量，直接返回前n个
+        if length <= len(base_colors):
+            return [f"rgba({r}, {g}, {b}, {opacity})" for r, g, b in base_colors[:length]]
+        
+        # 如果需要更多颜色，对已有的颜色进行插值
+        # 为简化，我们循环使用已有的颜色
+        result = []
+        for i in range(length):
+            idx = i % len(base_colors)
+            r, g, b = base_colors[idx]
+            # 每次循环都稍微调整一下透明度，增加变化
+            adjusted_opacity = max(0.3, min(0.9, opacity - 0.05 * (i // len(base_colors))))
+            result.append(f"rgba({r}, {g}, {b}, {adjusted_opacity})")
+        
+        return result
+    
+    # def _find_best_matching_column(self, label, df):
+    #     """查找与给定标签最匹配的DataFrame列名
+        
+    #     参数:
+    #         label: 从可视化代码中提取的标签名
+    #         df: 数据DataFrame
+            
+    #     返回:
+    #         最匹配的列名，如果没有找到则返回None
+    #     """
+    #     if label in df.columns:
+    #         return label
+            
+    #     # 1. 尝试简化标签（小写、移除空格等）
+    #     simplified_label = label.lower().replace(' ', '_')
+    #     for col in df.columns:
+    #         if simplified_label == col.lower().replace(' ', '_'):
+    #             return col
+                
+    #     # 2. 检查是否有部分匹配
+    #     label_words = set(label.lower().split())
+    #     best_match = None
+    #     best_score = 0
+        
+    #     for col in df.columns:
+    #         col_words = set(col.lower().split('_'))
+    #         # 计算匹配单词的数量
+    #         match_score = len(label_words.intersection(col_words))
+    #         if match_score > best_score:
+    #             best_score = match_score
+    #             best_match = col
+                
+    #     # 如果至少有一个单词匹配，返回最佳匹配
+    #     if best_score > 0:
+    #         print(f"📊 找到与'{label}'最匹配的列: '{best_match}'")
+    #         return best_match
+            
+    #     # 3. 根据图表类型推断可能的列
+    #     # 如果标签暗示是计数/数量
+    #     if any(word in label.lower() for word in ['count', 'number', 'quantity', 'amount']):
+    #         # 尝试找到数值型列
+    #         numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    #         if numeric_cols:
+    #             print(f"📊 标签'{label}'暗示计数/数量，使用数值列: '{numeric_cols[0]}'")
+    #             return numeric_cols[0]
+                
+    #     # 没有找到合适的匹配
+    #     return None
+
+    def _find_last_dataframe_variable(self, code):
+        """从代码中找出最后一个定义的DataFrame变量
+        
+        参数:
+            code: 可视化代码
+            
+        返回:
+            变量名或None
+        """
+        # 查找变量定义模式
+        var_assigns = re.findall(r'(\w+)\s*=\s*', code)
+        plot_vars = re.findall(r'(\w+)\.plot', code)
+        
+        # 如果找到了用于绘图的变量，优先返回
+        if plot_vars:
+            return plot_vars[-1]
+        
+        # 否则返回最后定义的变量
+        if var_assigns:
+            return var_assigns[-1]
+        
+        return None
+        
+   # def _extract_actual_data(self, visualization):
+        """尝试从可视化对象提取实际用于绘图的数据
+        
+        参数:
+            visualization: 可视化对象
+            
+        返回:
+            dict: 包含数据的字典，格式适用于Chart.js
+        """
+        try:
+            # 检查可视化对象是否有数据属性
+            if not hasattr(visualization, 'code'):
+                return None
+                
+            code = visualization.code
+            print("\n📊 尝试提取图表实际数据:")
+            
+            # 1. 解析代码以确定图表类型
+            chart_type = "bar"  # 默认
+            if 'plt.bar(' in code or '.plot.bar(' in code or 'kind="bar"' in code or "kind='bar'" in code:
+                chart_type = "bar"
+            elif 'plt.line(' in code or '.plot(' in code and not '.plot.bar(' in code:
+                chart_type = "line"
+            elif 'plt.scatter(' in code or '.plot.scatter(' in code:
+                chart_type = "scatter" 
+            elif 'plt.pie(' in code or 'kind="pie"' in code or "kind='pie'" in code:
+                chart_type = "pie"
+            elif 'plt.hist(' in code or 'kind="hist"' in code or "kind='hist'" in code:
+                chart_type = "bar"  # 直方图在 Chart.js 中使用 bar
+            
+            # 2. 检查可视化对象是否有Figure属性
+            fig = None
+            if hasattr(visualization, 'fig'):
+                fig = visualization.fig
+                print("✓ 找到fig属性")
+            elif hasattr(visualization, 'figure'):
+                fig = visualization.figure
+                print("✓ 找到figure属性")
+            elif hasattr(visualization, 'plt') and hasattr(visualization.plt, 'gcf'):
+                # 尝试从plt对象获取当前图形
+                try:
+                    fig = visualization.plt.gcf()
+                    print("✓ 从plt.gcf()获取到当前图形")
+                except:
+                    pass
+                    
+            # 3. 尝试从可视化代码中提取最后的结果变量
+            if not fig:
+                # 尝试从代码中找到最后返回的变量
+                result_match = re.search(r'return\s+(\w+)', code)
+                if result_match:
+                    result_var = result_match.group(1)
+                    print(f"✓ 从代码中找到返回变量: {result_var}")
+                    
+                    # 检查visualization对象是否有这个属性
+                    if hasattr(visualization, result_var):
+                        result_obj = getattr(visualization, result_var)
+                        if hasattr(result_obj, 'figure'):
+                            fig = result_obj.figure
+                            print(f"✓ 从返回变量获取到figure")
+                        elif hasattr(result_obj, 'gcf'):
+                            try:
+                                fig = result_obj.gcf()
+                                print(f"✓ 从返回变量的gcf()获取到figure")
+                            except:
+                                pass
+                
+            # 4. 如果有Figure，尝试从中提取数据
+            data_extracted = False
+            if fig is not None:
+                try:
+                    # 直接从图形对象提取所有数据
+                    all_data = {}
+                    
+                    for i, ax in enumerate(fig.axes):
+                        print(f"✓ 分析图表轴 #{i+1}")
+                        
+                        # 提取条形图数据
+                        if chart_type == "bar" and hasattr(ax, 'containers') and ax.containers:
+                            try:
+                                container = ax.containers[0]
+                                heights = [rect.get_height() for rect in container]
+                                
+                                # 提取X轴标签
+                                if hasattr(ax, 'get_xticklabels'):
+                                    labels = [label.get_text() for label in ax.get_xticklabels() if label.get_text()]
+                                    if not labels or len(labels) != len(heights):
+                                        # 尝试从坐标中获取位置
+                                        x_positions = [rect.get_x() + rect.get_width()/2 for rect in container]
+                                        labels = [str(pos) for pos in x_positions]
+                                else:
+                                    # 找不到标签，使用默认值
+                                    labels = [f"类别{i+1}" for i in range(len(heights))]
+                                    
+                                all_data = {
+                                    "labels": labels,
+                                    "datasets": [{
+                                        "label": "数据",
+                                        "data": heights
+                                    }]
+                                }
+                                print(f"✓ 从条形图提取到{len(heights)}个数据点")
+                                data_extracted = True
+                                break
+                            except Exception as e:
+                                print(f"从条形图容器提取数据时出错: {str(e)}")
+                        
+                        # 提取线图数据
+                        if (chart_type == "line" or not data_extracted) and hasattr(ax, 'lines') and ax.lines:
+                            try:
+                                all_datasets = []
+                                for j, line in enumerate(ax.lines):
+                                    x_data = line.get_xdata()
+                                    y_data = line.get_ydata()
+                                    
+                                    # 转换为列表并处理numpy数组
+                                    if hasattr(x_data, 'tolist'):
+                                        x_data = x_data.tolist()
+                                    if hasattr(y_data, 'tolist'):
+                                        y_data = y_data.tolist()
+                                    
+                                    # 只保留前100个点(如果数据太大)
+                                    if len(x_data) > 100:
+                                        step = len(x_data) // 100
+                                        x_data = x_data[::step][:100]
+                                        y_data = y_data[::step][:100]
+                                        
+                                    # 如果是第一条线，设置labels
+                                    if j == 0:
+                                        all_data["labels"] = [str(x) for x in x_data]
+                                        
+                                    all_datasets.append({
+                                        "label": f"系列{j+1}",
+                                        "data": y_data
+                                    })
+                                
+                                if all_datasets:
+                                    all_data["datasets"] = all_datasets
+                                    print(f"✓ 从线图提取到{len(all_datasets)}个系列的数据")
+                                    data_extracted = True
+                                    break
+                            except Exception as e:
+                                print(f"从线图提取数据时出错: {str(e)}")
+                        
+                        # 提取散点图数据
+                        if (chart_type == "scatter" or not data_extracted) and hasattr(ax, 'collections') and ax.collections:
+                            try:
+                                all_datasets = []
+                                for j, collection in enumerate(ax.collections):
+                                    if hasattr(collection, 'get_offsets'):
+                                        offsets = collection.get_offsets()
+                                        if hasattr(offsets, 'tolist'):
+                                            points = offsets.tolist()
+                                            
+                                            # 限制数据点数量
+                                            if len(points) > 100:
+                                                points = points[:100]
+                                                
+                                            x_data = [point[0] for point in points]
+                                            y_data = [point[1] for point in points]
+                                            
+                                            # 如果是第一个集合，设置labels
+                                            if j == 0:
+                                                all_data["labels"] = [str(x) for x in x_data]
+                                                
+                                            all_datasets.append({
+                                                "label": f"系列{j+1}",
+                                                "data": y_data
+                                            })
+                                
+                                if all_datasets:
+                                    all_data["datasets"] = all_datasets
+                                    print(f"✓ 从散点图提取到{len(all_datasets)}个系列的数据")
+                                    data_extracted = True
+                                    break
+                            except Exception as e:
+                                print(f"从散点图提取数据时出错: {str(e)}")
+                        
+                        # 提取饼图数据 
+                        if (chart_type == "pie" or not data_extracted) and hasattr(ax, 'patches') and ax.patches:
+                            try:
+                                patches = ax.patches
+                                sizes = [patch.theta2 - patch.theta1 for patch in patches]
+                                
+                                # 提取标签
+                                labels = []
+                                if hasattr(ax, 'texts') and ax.texts:
+                                    labels = [text.get_text() for text in ax.texts if text.get_text()]
+                                
+                                if not labels or len(labels) != len(sizes):
+                                    labels = [f"部分{i+1}" for i in range(len(sizes))]
+                                    
+                                # 归一化尺寸为百分比
+                                total = sum(sizes)
+                                sizes = [size/total*100 for size in sizes]
+                                
+                                all_data = {
+                                    "labels": labels,
+                                    "datasets": [{
+                                        "label": "数据",
+                                        "data": sizes
+                                    }]
+                                }
+                                print(f"✓ 从饼图提取到{len(sizes)}个数据点")
+                                data_extracted = True
+                                break
+                            except Exception as e:
+                                print(f"从饼图提取数据时出错: {str(e)}")
+                    
+                    if data_extracted and all_data:
+                        print(f"✓ 成功从图形对象提取数据")
+                        return all_data
+                except Exception as e:
+                    print(f"从图形对象提取数据时出错: {str(e)}")
+            
+            # 5. 如果上述方法都失败，检查是否有数据属性
+            if hasattr(visualization, '_data') and isinstance(visualization._data, pd.DataFrame):
+                df = visualization._data
+                print(f"✓ 找到数据属性 _data")
+                # 根据不同图表类型处理数据
+                data = self._process_dataframe_for_chart(df, chart_type)
+                if data:
+                    return data
+                
+            elif hasattr(visualization, 'data') and isinstance(visualization.data, pd.DataFrame):
+                df = visualization.data
+                print(f"✓ 找到数据属性 data")
+                # 根据不同图表类型处理数据
+                data = self._process_dataframe_for_chart(df, chart_type)
+                if data:
+                    return data
+            
+            # 6. 尝试从代码中找到数据框变量并执行代码
+            try:
+                # 查找最后一个DataFrame变量
+                last_df_var = self._find_last_dataframe_variable(code)
+                if last_df_var and 'df' in locals():
+                    print(f"✓ 找到最后的DataFrame变量: {last_df_var}")
+                    # 提取代码中的最终数据处理部分
+                    # 这里只是一个简化处理，实际上应该更复杂
+                    df_code_pattern = f"{last_df_var}\s*=.*?(?=\n\n|\Z)"
+                    df_code_match = re.search(df_code_pattern, code, re.DOTALL)
+                    if df_code_match:
+                        df_code = df_code_match.group(0)
+                        print(f"✓ 提取到DataFrame处理代码")
+                        # 这里我们不能直接执行代码，但至少知道有这样的代码段
+                        # 可以添加到日志中以便后续分析
+            except Exception as e:
+                print(f"分析代码中的DataFrame变量时出错: {str(e)}")
+                
+            # 7. 如果还是找不到数据，尝试模拟执行，这部分保留现有的_extract_chart_config方法的能力
+            print("⚠️ 无法直接从可视化对象提取数据")
+            return None
+                
+        except Exception as e:
+            print(f"⚠️ 提取图表实际数据时出错: {str(e)}")
+            traceback.print_exc()
+            return None
+            
+    def _process_dataframe_for_chart(self, df, chart_type):
+        """根据图表类型处理DataFrame并生成适合的数据结构
+        
+        参数:
+            df: 数据框
+            chart_type: 图表类型
+            
+        返回:
+            适合Chart.js的数据字典
+        """
+        try:
+            if df.empty:
+                return None
+                
+            # 针对不同图表类型处理数据
+            if chart_type in ["bar", "line"]:
+                # 假设第一列为标签，其余列为数据
+                # 这是一个简化处理，实际可能需要更复杂的逻辑
+                if len(df.columns) >= 2:
+                    labels = df.iloc[:, 0].astype(str).tolist()
+                    data_cols = df.columns[1:]
+                    
+                    datasets = []
+                    for col in data_cols:
+                        datasets.append({
+                            "label": col,
+                            "data": df[col].tolist()
+                        })
+                    
+                    return {
+                        "labels": labels,
+                        "datasets": datasets
+                    }
+                else:
+                    # 单列数据，使用索引作为标签
+                    labels = [str(i) for i in range(len(df))]
+                    data = df.iloc[:, 0].tolist()
+                    
+                    return {
+                        "labels": labels,
+                        "datasets": [{
+                            "label": df.columns[0],
+                            "data": data
+                        }]
+                    }
+                    
+            elif chart_type == "scatter":
+                # 散点图通常需要两列：x和y
+                if len(df.columns) >= 2:
+                    x_data = df.iloc[:, 0].tolist()
+                    y_data = df.iloc[:, 1].tolist()
+                    
+                    return {
+                        "labels": [str(x) for x in x_data],
+                        "datasets": [{
+                            "label": df.columns[1],
+                            "data": y_data
+                        }]
+                    }
+                    
+            elif chart_type == "pie":
+                # 饼图通常是一列标签和一列数值
+                if len(df.columns) >= 2:
+                    labels = df.iloc[:, 0].astype(str).tolist()
+                    data = df.iloc[:, 1].tolist()
+                    
+                    return {
+                        "labels": labels,
+                        "datasets": [{
+                            "label": df.columns[1],
+                            "data": data
+                        }]
+                    }
+                else:
+                    # 单列数据，使用值计数
+                    value_counts = df.iloc[:, 0].value_counts()
+                    labels = value_counts.index.astype(str).tolist()
+                    data = value_counts.values.tolist()
+                    
+                    return {
+                        "labels": labels,
+                        "datasets": [{
+                            "label": df.columns[0],
+                            "data": data
+                        }]
+                    }
+                    
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ 处理DataFrame时出错: {str(e)}")
+            traceback.print_exc()
+            return None
 
 class ReviseVis(DataStorytellingAction):
     def __init__(self):
@@ -1200,7 +2076,7 @@ class ReviseVis(DataStorytellingAction):
                             if hasattr(edited_visualization, 'savefig'):
                                 edited_visualization.savefig(edited_chart_path)
                                 print(f"✓ 修改后的图表已保存到: {edited_chart_path}")
-
+                            
                                 
                                 # 额外生成 Chart.js 配置 JSON 文件
                                 try:
@@ -1242,15 +2118,15 @@ class ReviseVis(DataStorytellingAction):
                                         elif hasattr(edited_visualization, 'data') and isinstance(edited_visualization.data, pd.DataFrame):
                                             edited_visualization.data.to_csv(csv_path, index=False)
                                             print(f"✓ 修改后的图表数据已保存到: {csv_path}")
-                                        # else:
+                                        else:
                                             # 尝试从代码中提取和分析数据
-                                            #last_df_var = tasks2charts._find_last_dataframe_variable(edited_visualization.code)
-                                            #if last_df_var:
+                                            last_df_var = tasks2charts._find_last_dataframe_variable(edited_visualization.code)
+                                            if last_df_var:
                                                 # 这里我们无法直接访问代码中的变量
                                                 # 所以只能保存一个指示文件，提示chart_config使用什么变量
-                                                #with open(csv_path + ".info", "w") as f:
-                                                #    f.write(f"Last DataFrame variable: {last_df_var}")
-                                                #print(f"✓ 修改后的图表数据变量信息已保存: {last_df_var}")
+                                                with open(csv_path + ".info", "w") as f:
+                                                    f.write(f"Last DataFrame variable: {last_df_var}")
+                                                print(f"✓ 修改后的图表数据变量信息已保存: {last_df_var}")
                                     except Exception as e:
                                         print(f"⚠️ 保存修改后的图表数据 CSV 时出错: {str(e)}")
                                         traceback.print_exc()
@@ -1272,8 +2148,8 @@ class ReviseVis(DataStorytellingAction):
                             # 添加JSON配置路径属性
                             if 'json_path' in locals() and json_path:
                                 edited_chart.json_config_path = json_path
-                                print(f"- JSON 配置路径: {json_path}")
-                                                        
+                                print(f"- JSON 配置路径: {json_path}")                            
+
                             # 更新章节中的图表
                             for i, c in enumerate(chapter.charts):
                                 if hasattr(c, 'task_id') and c.task_id == task_id:
@@ -1637,20 +2513,20 @@ class Charts2Captions(DataStorytellingAction):
                         chart_idx = caption_info.get("chart_idx")
                         caption = caption_info.get("caption", "")
                         
-                    if hasattr(chapter, 'charts') and 0 <= chart_idx < len(chapter.charts):
-                        chart = chapter.charts[chart_idx]
-                        chart.caption = caption
-                        chart.needs_caption = False
-                        caption_applied = True
+                        if hasattr(chapter, 'charts') and 0 <= chart_idx < len(chapter.charts):
+                            chart = chapter.charts[chart_idx]
+                            chart.caption = caption
+                            chart.needs_caption = False
+                            caption_applied = True
                             
                             # 更新任务状态
-                        if hasattr(chapter, 'visualization_tasks'):
-                            for task in chapter.visualization_tasks:
-                                if task.get('task_id') == chart.task_id:
-                                    task['status'] = 'completed'
-                                    task['caption_generated'] = True
-                                    break
-                            
+                            if hasattr(chapter, 'visualization_tasks'):
+                                for task in chapter.visualization_tasks:
+                                    if task.get('task_id') == chart.task_id:
+                                        task['status'] = 'completed'
+                                        task['caption_generated'] = True
+                                        break
+                        
             if caption_applied:  # 只有当应用了说明时才添加节点
                 child_node.caption_strategy = f"统一方案{scheme_idx+1}"
                 children_nodes.append(child_node)

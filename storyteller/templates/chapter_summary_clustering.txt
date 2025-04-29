@@ -1,0 +1,33 @@
+You are tasked with clustering multiple candidate summaries for each chapter and selecting the best summary from each cluster.
+
+Please analyze the following candidate summaries for each chapter:
+{CHAPTER_SUMMARIES_DATA}
+
+Perform the following steps:
+1. Cluster the candidate summaries for each chapter based on content similarity.
+2. Select the optimal summary from each cluster. Selection criteria: comprehensive information, logical clarity, and fluent expression.
+3. Return the results in the following JSON format:
+
+```json
+{{
+  "clusters": [
+    {{
+      "cluster_id": "cluster_1",
+      "chapter_summaries": [
+        {{
+          "chapter_idx": 0,
+          "summary": "The complete text of the optimal summary"
+        }},
+        {{
+          "chapter_idx": 1,
+          "summary": "The complete text of the optimal summary"
+        }}
+        // Optimal summaries for other chapters...
+      ]
+    }},
+    // Possible other clusters...
+  ]
+}}
+```
+
+Please ensure your output is in valid JSON format and that all chapters have corresponding summaries. 

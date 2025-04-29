@@ -48,6 +48,13 @@ class ReportGenerationState(Enum):
     FINALIZED = "Finalized"
     # 📌 最终报告生成完成：搜索终止，报告完成，可以导出
 
+    REVISECHAPTERSORDERS = "ReviseChaptersOrders"
+    # 📌 章节顺序已调整：已调整章节顺序，优化报告结构
+    
+    ADDEDTRANSITIONS = "AddedTransitions"
+    # 📌 过渡文本已添加：所有章节间过渡文本已添加，提高报告连贯性
+
+
 
 
 # Chart 单个图表

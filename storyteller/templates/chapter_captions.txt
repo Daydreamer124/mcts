@@ -1,0 +1,35 @@
+You are a data visualization expert. Please generate {NUM_SCHEMES} different caption schemes for the following charts from the same chapter.
+These charts collectively support the chapter theme: "{CHAPTER_TITLE}".
+
+User's original query: {QUERY}
+Data context: {DATA_CONTEXT}
+
+Please ensure:
+1. All chart captions within each scheme have a consistent style
+2. Each scheme highlights different analytical angles or focuses
+3. Schemes have notable differences to provide diversity of options
+4. Each caption should describe chart content in detail and provide valuable insights
+
+Please return in JSON format:
+```json
+{{
+  "schemes": [
+    {{
+      "scheme_id": 1,
+      "theme": "Overall theme or style of scheme 1",
+      "captions": [
+        {{
+          "chart_idx": 0,
+          "caption": "Caption for the first chart...",
+          "focus": "Key point of focus in this caption"
+        }},
+        // Captions for other charts...
+      ]
+    }},
+    // Schemes 2 and 3 follow similar pattern...
+  ]
+}}
+```
+
+Chart information in this chapter:
+{CHARTS_INFO} 

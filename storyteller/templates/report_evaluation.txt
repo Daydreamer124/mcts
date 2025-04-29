@@ -1,34 +1,48 @@
-Please evaluate the following data visualization report, scoring it across four dimensions (1-10 points) and providing detailed rationales:
-Dataset Context: {DATASET_CONTEXT}
-User Query: {QUERY}
-Report Content: {REPORT}
+You are a professional data visualization evaluation expert. Please evaluate the following data visualization report.
 
-Evaluation Dimensions:
-1.Accuracy and Completeness of Data Representation - 40%
- -Chart type suitability: Is the selected chart type appropriate for expressing this type of data and its relationships?
- -Scale accuracy: Do visual elements such as axes and areas accurately reflect the data magnitude relationships?
- -Data completeness: Are key data points completely presented without obvious omissions?
- -Data context completeness: Are necessary titles, coordinate axes, legends, and other information provided?
-2.Effectiveness and Clarity of Information Communication - 30%
- -Core information highlighting: Are key insights highlighted through visual elements?
- -Cognitive friendliness: Is information density appropriate and are annotations clear?
- -Content coherence: Do visualizations and text form a coherent narrative?
-3.Aesthetic Quality and Professionalism of Design - 20%
- -Overall visual harmony: Are colors coordinated and layout balanced?
- -Refined details: Are spacing, alignment, and other details professional?
- -Simplicity and restraint: Are unnecessary decorations avoided?
-4.Narrative Structure Completeness - 10%
- -Does it include a complete structure with summary, body, conclusion, etc.?
- -Are all sections logically connected?
- -Does the content closely address the user query?
-Please score based on the above standards, with output in JSON format: 
+Dataset Context:
+{DATASET_CONTEXT}
 
-{
-    "representation": {"score": 0-10, "rationale": "..."},
-    "presentation": {"score": 0-10, "rationale": "..."},
-    "aesthetics": {"score": 0-10, "rationale": "..."},
-    "narrative": {"score": 0-10, "rationale": "..."}
-}
+User Query:
+{QUERY}
+
+Report HTML Content:
+{REPORT}
+
+Report Image:
+{REPORT_IMAGE}
+
+Please evaluate the data visualization report across the following four dimensions (1-10 points) and provide detailed rationales:
+
+1. Accuracy and Completeness of Data Representation - 40%
+- Chart type suitability: Is the selected chart type appropriate for expressing this type of data and its relationships?
+- Scale accuracy: Do visual elements such as axes and areas accurately reflect the data magnitude relationships?
+- Data completeness: Are key data points completely presented without obvious omissions?
+- Data context completeness: Are necessary titles, coordinate axes, legends, and other information provided?
+
+2. Effectiveness and Clarity of Information Communication - 30%
+- Core information highlighting: Are key insights highlighted through visual elements?
+- Cognitive friendliness: Is information density appropriate and are annotations clear?
+- Content coherence: Do visualizations and text form a coherent narrative?
+
+3. Aesthetic Quality and Professionalism of Design - 20%
+- Overall visual harmony: Are colors coordinated and layout balanced?
+- Refined details: Are spacing, alignment, and other details professional?
+- Simplicity and restraint: Are unnecessary decorations avoided?
+
+4. Narrative Structure Completeness - 10%
+- Does it include a complete structure with summary, body, conclusion, etc.?
+- Are all sections logically connected?
+- Does the content closely address the user query?
+
+Please ONLY return your evaluation in the following JSON format without any additional explanation or prefix:
+
+{{
+    "representation": {{"score": number, "rationale": "detailed evaluation reason"}},
+    "presentation": {{"score": number, "rationale": "detailed evaluation reason"}},
+    "aesthetics": {{"score": number, "rationale": "detailed evaluation reason"}},
+    "narrative": {{"score": number, "rationale": "detailed evaluation reason"}}
+}}
 
 
 Notes:

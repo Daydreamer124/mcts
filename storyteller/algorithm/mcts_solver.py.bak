@@ -19,15 +19,13 @@ from storyteller.algorithm.mcts_action import (
     ReviseVis,
     Charts2Captions,
     Captions2Summaries,
-    ReviseNarrativeStrategy,
-    TransitionAction
 )
 NODE_TYPE_TO_VALID_ACTIONS = {
     ReportGenerationState.EMPTY: [
         Query2Chapters
     ],
     ReportGenerationState.a1: [
-        Chapters2Tasks,
+        Chapters2Tasks
     ],
     ReportGenerationState.a2: [
         Tasks2Charts
@@ -40,16 +38,9 @@ NODE_TYPE_TO_VALID_ACTIONS = {
         Charts2Captions
     ],
     ReportGenerationState.a5: [
-        Captions2Summaries,
+        Captions2Summaries
     ],
-    ReportGenerationState.a6: [
-        ReviseNarrativeStrategy,
-        TransitionAction
-    ],
-    ReportGenerationState.REVISECHAPTERSORDERS: [
-        TransitionAction
-    ], 
-    ReportGenerationState.FINALIZED: []  # 终止状态，添加过渡后的最终状态
+    ReportGenerationState.FINALIZED: []  # 终止状态
 }
 from storyteller.algorithm.reward import StorytellingRewardModel
 from .utils.html2image import convert_html_file_to_image
@@ -690,17 +681,13 @@ class DataStorytellingMCTSSolver:
             markdown.append(node.report.key_abstract + "\n")
         
         # 3. 章节内容
-        for i, chapter in enumerate(node.report.chapters):
+        for chapter in node.report.chapters:
             # 移除标题中的字典格式
             chapter_title = chapter.title
             if isinstance(chapter_title, str) and chapter_title.startswith("{'title': '") and chapter_title.endswith("'}"):
                 chapter_title = chapter_title[len("{'title': '"):-2]
             
             markdown.append(f"\n## {chapter_title}\n")
-            
-            # 添加过渡文本（如果存在）
-            if hasattr(chapter, 'transition') and chapter.transition:
-                markdown.append(f"{chapter.transition}\n\n")
             
             # 添加图表和说明
             for chart in getattr(chapter, 'charts', []):

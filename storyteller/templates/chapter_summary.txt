@@ -14,4 +14,4 @@ Identify patterns, trends, or relationships in the data
 Provide in-depth interpretation of these findings
 Conclude with a summary of the main findings and suggest possible recommendations or directions for further analysis
 
-The summary should be a well-structured paragraph, between 100-200 words in length, with professional yet accessible language.
+The summary should be a well-structured paragraph, within 100 words in length, with professional yet accessible language.

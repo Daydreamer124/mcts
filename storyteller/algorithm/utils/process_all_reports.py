@@ -3,7 +3,7 @@ import subprocess
 import glob
 import argparse
 
-def process_all_reports(template='orange', all_templates=False, specific_dir=None):
+def process_all_reports(template='dashboard', all_templates=False, specific_dir=None):
     # 如果指定了特定目录，只处理该目录
     if specific_dir:
         if os.path.exists(specific_dir) and os.path.isdir(specific_dir):
@@ -17,7 +17,7 @@ def process_all_reports(template='orange', all_templates=False, specific_dir=Non
         iteration_dirs = glob.glob(f'{base_dir}/iteration_*')
     
     # 如果指定了生成所有模板，则使用所有可用模板
-    templates_to_use = ['orange', 'blue', 'green', 'purple', 'sidebar', 'grid', 'dark', 'magazine', 'dashboard'] if all_templates else [template]
+    templates_to_use = ['sidebar', 'grid', 'magazine', 'dashboard'] if all_templates else [template]
     
     for iteration_dir in sorted(iteration_dirs):
         # 检查是否存在report.md文件
@@ -48,8 +48,8 @@ def process_all_reports(template='orange', all_templates=False, specific_dir=Non
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process all markdown reports and generate HTML files')
-    parser.add_argument('--template', choices=['orange', 'blue', 'green', 'purple', 'sidebar', 'grid', 'dark', 'magazine', 'dashboard'], 
-                        default='orange', help='Template style to use')
+    parser.add_argument('--template', choices=['sidebar', 'grid', 'magazine', 'dashboard'], 
+                        default='dashboard', help='Template style to use')
     parser.add_argument('--all', action='store_true', help='Generate reports with all available templates')
     parser.add_argument('--dir', type=str, help='Specific directory to process instead of all iteration directories')
     args = parser.parse_args()

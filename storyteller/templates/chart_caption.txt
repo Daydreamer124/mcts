@@ -3,12 +3,8 @@ You are a data visualization expert. Please write a concise and insightful capti
 ## Chart Information
 User Query: {QUERY}
 Chapter Title: {CHAPTER_TITLE}
-Chart Type: {CHART_TYPE}
-Task Description: {TASK_DESCRIPTION}
+Charts Information: {CHARTS_INFO}
 
-## Data Context
-{DATA_CONTEXT}
-
-Carefully observe the chart, including its axis labels, categories, and patterns. Your caption should reflect what is actually shown in the chart, highlight key insights or trends, and connect back to the user's query or chapter theme where relevant.
+Carefully observe the charts, including its axis labels, categories, and patterns. Your caption should reflect what is actually shown in the chart, highlight key insights or trends, and connect back to the user's query or chapter theme where relevant.
 
 Keep it natural, insightful, and limited to **no more than 50 words**. Avoid generic descriptions or redundant phrases. Do not prefix with "Chart:" or similar labels.

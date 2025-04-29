@@ -19,11 +19,11 @@ N_CALLING_STRATEGY_MULTIPLE = "multiple"  # `n` 轮独立调用
 
 def call_openai(
     prompt: str,
-    model: str = "gpt-4o-mini",
+    model: str = "gpt-4o",
     temperature: float = 0.0,
     top_p: float = 1.0,
     n: int = 1,
-    max_tokens: int = 1024,
+    max_tokens: int = 4096,
     stop: List[str] = None,
     base_url: str = None,
     api_key: str = None,

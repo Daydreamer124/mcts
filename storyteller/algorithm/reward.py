@@ -15,60 +15,18 @@ class StorytellingRewardModel:
         """
         self.llm_kwargs = llm_kwargs or {}
         # 添加记录最后一次评分的属性
-        self.last_base_reward = 0.0
         self.last_quality_reward = 0.0
-        self.last_extra_reward = 0.0
 
     def compute_reward(self, node: MCTSNode, html_path: str, image_path: str) -> float:
         """计算节点的奖励值"""
-        # 基础奖励
-        base_reward = self._compute_base_reward(node)
-        self.last_base_reward = base_reward
-        
-        # 进阶奖励 - 确保能看到图表的报告质量评估
+        # 只计算质量奖励 - 确保能看到图表的报告质量评估
         quality_reward = self._compute_quality_reward(node, html_path, image_path)
         self.last_quality_reward = quality_reward
         
-        # 额外奖励
-        extra_reward = self._compute_extra_reward(node)
-        self.last_extra_reward = extra_reward
-        
         # 输出详细评分信息，帮助调试
-        print(f"📊 评分明细 - 基础: {base_reward:.2f}, 质量: {quality_reward:.2f}, 额外: {extra_reward:.2f}")
+        print(f"📊 评分明细 - 质量: {quality_reward:.2f}")
         
-        return base_reward + quality_reward + extra_reward
-        
-    def _compute_base_reward(self, node: MCTSNode) -> float:
-        """
-        计算基础奖励（满分100分）
-        """
-        reward = 0.0
-        report = node.report
-        
-        # 1. 章节数量检查（20分）
-        num_chapters = len(report.chapters)
-        if 3 <= num_chapters <= 6:
-            reward += 20
-        else:
-            reward += max(0, 20 - abs(4 - num_chapters) * 5)  # 每偏离1个章节扣5分
-
-        # 2. 章节完成度（30分）
-        if num_chapters > 0:
-            completed_ratio = sum(1 for chapter in report.chapters if chapter.all_tasks_completed()) / num_chapters
-            reward += completed_ratio * 30
-
-        # 3. 可视化完整度（30分）
-        total_tasks = sum(len(chapter.visualization_tasks) for chapter in report.chapters)
-        if total_tasks > 0:
-            completed_viz = sum(len(chapter.charts) for chapter in report.chapters)
-            reward += min(completed_viz / total_tasks * 30, 30)
-
-        # 4. 摘要完整度（20分）
-        if num_chapters > 0:
-            summary_ratio = sum(1 for chapter in report.chapters if chapter.summary) / num_chapters
-            reward += summary_ratio * 20
-        
-        return reward
+        return quality_reward
         
     def _compute_quality_reward(self, node: MCTSNode, html_path: str, image_path: str) -> float:
         """计算质量奖励（0-10分）"""
