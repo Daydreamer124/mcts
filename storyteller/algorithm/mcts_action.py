@@ -754,7 +754,7 @@ class Tasks2Charts(DataStorytellingAction):
                     #text_gen = llm(provider="openai", model="gpt-4-32k")
                     text_gen = llm(
                         provider="openai", 
-                        model="gpt-4-32k"
+                        model="gpt-4o"
                     )
 
                     # 创建 LIDA 管理器
@@ -1015,9 +1015,9 @@ class Tasks2Charts(DataStorytellingAction):
                 print(f"- {key}: {value}")
             
             # 如果解析失败，回退到原有的静态分析
-            if "error" in ast_config:
-                print(f"⚠️ AST解析失败，回退到静态分析: {ast_config['error']}")
-                return self._extract_chart_config_fallback(visualization, task_id, description, df, use_antv)
+            #if "error" in ast_config:
+            #    print(f"⚠️ AST解析失败，回退到静态分析: {ast_config['error']}")
+            #    return self._extract_chart_config_fallback(visualization, task_id, description, df, use_antv)
             
             # 提取AST配置并修正字段信息
             if "error" not in ast_config:
@@ -1050,23 +1050,23 @@ class Tasks2Charts(DataStorytellingAction):
                 if series_field:
                     print(f"- 分组字段: {series_field}")
                     print(f"- 是否堆叠: {'是' if chart_config.get('isStack', False) else '否'}")
-                else:
-                    print(f"\n✓ 成功生成Chart.js配置:")
-                    print(f"- 图表类型: {chart_config['chart_type']}")
-                    print(f"- 图表标题: {chart_config['title']}")
-                    print(f"- X轴字段: {chart_config.get('x_field', '')}")
-                    print(f"- Y轴字段: {chart_config.get('y_field', '')}")
-                    print(f"- 数据点数量: {len(chart_config['data']['labels'])}")
-                    print(f"- 数据集数量: {len(chart_config['data']['datasets'])}")
-                    print(f"- 是否堆叠柱状图: {'是' if chart_config.get('options', {}).get('scales', {}).get('y', {}).get('stacked', False) else '否'}")
+            else:
+                print(f"\n✓ 成功生成Chart.js配置:")
+                print(f"- 图表类型: {chart_config['chart_type']}")
+                print(f"- 图表标题: {chart_config['title']}")
+                print(f"- X轴字段: {chart_config.get('x_field', '')}")
+                print(f"- Y轴字段: {chart_config.get('y_field', '')}")
+                print(f"- 数据点数量: {len(chart_config['data']['labels'])}")
+                print(f"- 数据集数量: {len(chart_config['data']['datasets'])}")
+                print(f"- 是否堆叠柱状图: {'是' if chart_config.get('options', {}).get('scales', {}).get('y', {}).get('stacked', False) else '否'}")
             
         except Exception as e:
             print(f"⚠️ 提取图表配置时出错: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            #import traceback
+            #traceback.print_exc()
             
             # 回退到原有方法
-            chart_config = self._extract_chart_config_fallback(visualization, task_id, description, df, use_antv)
+            # chart_config = self._extract_chart_config_fallback(visualization, task_id, description, df, use_antv)
         
         return chart_config
 
@@ -1134,7 +1134,7 @@ class ReviseVis(DataStorytellingAction):
                         from lida.datamodel import Summary
                         
                         # 创建自定义的文本生成器
-                        text_gen = llm(provider="openai", model="gpt-4-32k")
+                        text_gen = llm(provider="openai", model="gpt-4o")
                         manager = Manager(text_gen=text_gen)
                         
                         # 读取数据摘要 JSON 文件
@@ -1321,10 +1321,34 @@ class Charts2Captions(DataStorytellingAction):
 
     def call_vision_api(self, prompt, image_base64_list, **kwargs):
         """统一处理视觉API调用，支持单个或多个图像"""
-        url = "https://gpt-api.hkust-gz.edu.cn/v1/chat/completions"
+        import os
+        import requests
+        import json
+        
+        # 获取环境变量
+        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        
+        # 日志记录
+        print(f"🔄 环境变量状态: OPENAI_BASE_URL={base_url}, OPENAI_API_KEY={'已设置' if api_key else '未设置'}")
+        
+        # 构造完整的API URL
+        if base_url.endswith('/chat/completions'):
+            url = base_url  # 已经是完整URL
+        elif base_url.endswith('/v1'):
+            url = f"{base_url}/chat/completions"  # 添加chat/completions端点
+        else:
+            # 确保URL以斜杠结尾
+            if not base_url.endswith('/'):
+                base_url += '/'
+            url = f"{base_url}v1/chat/completions"  # 添加v1/chat/completions路径
+            
+        print(f"🔄 使用API URL: {url}")
+        
+        # 设置请求头
         headers = {
             "Content-Type": "application/json",
-            "Authorization": "7ca9f48d315049bbad0b355afcd5f3a147a8395e46f249e3b7890ffa9ca5122c"
+            "Authorization": f"Bearer {api_key}" if api_key else ""
         }
         
         # 准备图像内容
@@ -1343,12 +1367,19 @@ class Charts2Captions(DataStorytellingAction):
             {"role": "user", "content": [{"type": "text", "text": prompt}, *image_contents]}
         ]
         
+        # 设置API调用参数
+        model = kwargs.get("model", "gpt-4o")
+        temperature = kwargs.get("temperature", 0.7)
+        max_tokens = kwargs.get("max_tokens", 4096)
+        
         data = {
-            "model": "gpt-4-turbo",
+            "model": model,
             "messages": messages,
-            "temperature": kwargs.get("temperature", 0.7),
-            "max_tokens": kwargs.get("max_tokens", 4096)
+            "temperature": temperature,
+            "max_tokens": max_tokens
         }
+        
+        print(f"🔄 调用视觉API，模型: {model}, 温度: {temperature}")
         
         # 调用API
         try:
@@ -1364,7 +1395,7 @@ class Charts2Captions(DataStorytellingAction):
             traceback.print_exc()
         
         return None
-            
+    
     def generate_chapter_caption_schemes(self, node, chapter, chapter_idx, charts, num_schemes=3, llm_kwargs=None):
         """为单个章节的所有图表生成多套说明方案，具有重试机制"""
         # 过滤出成功生成的图表
@@ -2158,7 +2189,7 @@ class Captions2Summaries(DataStorytellingAction):
                 
                 if success_count > 0:
                     # 设置节点状态
-                    child_node.node_type = ReportGenerationState.FINALIZED
+                    child_node.node_type = ReportGenerationState.a6
                     child_node.summary_cluster_id = cluster_id
                     children_nodes.append(child_node)
                     print(f"✅ 成功创建聚类 {cluster_id} 的子节点")
@@ -2170,7 +2201,7 @@ class Captions2Summaries(DataStorytellingAction):
                 child_node.parent_node = node
                 child_node.parent_action = self
                 child_node.depth = node.depth + 1
-                child_node.node_type = ReportGenerationState.FINALIZED
+                child_node.node_type = ReportGenerationState.a6
                 return [child_node]
             
             return children_nodes
@@ -2185,7 +2216,7 @@ class Captions2Summaries(DataStorytellingAction):
             self.process_all_chapters(child_node, llm_kwargs=llm_kwargs)
         
         # 设置最终状态
-        child_node.node_type = ReportGenerationState.FINALIZED
+        child_node.node_type = ReportGenerationState.a6
         
         return [child_node]
     
@@ -2289,6 +2320,7 @@ class ReviseNarrativeStrategy(DataStorytellingAction):
             node_applier=self.apply_narrative_strategy,
             n=3  # 生成3个不同的叙事策略方案
         )
+
 
 
 class TransitionAction(DataStorytellingAction):

@@ -70,6 +70,22 @@ def get_clustering_config(action_type: str) -> Dict[str, Any]:
             "similarity_criteria": "- 对相同章节分配了类似数据分析任务\n- 使用相似的可视化类型和设计策略\n- 关注相同的数据特征或维度",
             "difference_criteria": "- 对章节分配了不同的数据分析任务\n- 使用不同的可视化类型和设计策略\n- 关注不同的数据特征或维度"
         }
+    elif action_type == "transition":
+        return {
+            "item_type": "过渡文本方案",
+            "response_key": "transitions",
+            "cluster_key": "transitions",
+            "similarity_criteria": "- 相似的过渡逻辑\n- 强调相同的章节连接点\n- 采用类似的写作风格",
+            "difference_criteria": "- 不同的过渡逻辑\n- 强调不同的章节连接点\n- 采用不同的写作风格"
+        }
+    elif action_type == "narrative":
+        return {
+            "item_type": "叙事策略方案",
+            "response_key": "chapter_order",
+            "cluster_key": "chapter_order",
+            "similarity_criteria": "- 相似的章节排序逻辑\n- 相似的叙事框架",
+            "difference_criteria": "- 不同的章节排序逻辑\n- 不同的叙事框架"
+        }
     else:
         print(f"⚠️ 未知的行动类型: {action_type}")
         return {

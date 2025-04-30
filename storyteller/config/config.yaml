@@ -7,14 +7,13 @@ exploration_constant: 1.4
 data_context: "/Users/jiayi/Documents/mcts/storyteller/dataset/data_context.json"
 llm_kwargs:
   temperature: 0.7
-  #model: "gpt-4o-2024-05-13"
-  #model: "gpt-4o-2024-05-13"
-  #api_key: "sk-GNAtKRfZXeXBN2sqsuZhsuzYoQb1Sg6oKwdvcGY7HAINBrf6"
-  #base_url: "https://api.chsdw.top/v1"
+  model: "gpt-4o-2024-05-13"
+  base_url: "https://api.chsdw.top/v1"
 
-  model: "gpt-4-32k"
-  api_key: "7ca9f48d315049bbad0b355afcd5f3a147a8395e46f249e3b7890ffa9ca5122c"
-  base_url: "https://gpt-api.hkust-gz.edu.cn/v1"
+
+  #model: "gpt-4-32k"
+  #api_key: "7ca9f48d315049bbad0b355afcd5f3a147a8395e46f249e3b7890ffa9ca5122c"
+  #base_url: "https://gpt-api.hkust-gz.edu.cn/v1"
 # 历史记录配置
 history:
   save_iterations: true  # 是否保存迭代历史

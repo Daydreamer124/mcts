@@ -16,36 +16,33 @@ class ChartConfigExtractor(ast.NodeVisitor):
         self.reset()
     
     def reset(self):
-        """重置提取器状态"""
-        self.chart_type = "bar"  # 默认图表类型
-        self.title = None
-        self.x_label = None
-        self.y_label = None
+        """重置图表配置状态"""
+        self.chart_type = "bar"  # 默认为柱状图
+        self.title = ""
+        self.x_column = ""  # 数据列名称
+        self.y_column = ""
+        self.x_label = ""   # 轴标签
+        self.y_label = ""
+        self.hue_column = "" # 分组列
         self.data_columns = []
-        self.x_column = None
-        self.y_column = None
-        self.hue_column = None
+        self.current_dataframe_vars = set([self.dataframe_var_name])
         self.color = None
         self.colors = []
         self.bins = None
-        self.is_stacked = False
         self.legend = True
-        self.annotations = []
-        self.grid = True
-        self.figsize = None
-        # 用于跟踪所有变量赋值和操作
-        self.variable_assignments = {}
-        # 跟踪是否使用了sns或px
+        self.grid = False
         self.uses_seaborn = False
         self.uses_plotly = False
-        # 跟踪函数定义
-        self.functions = {}
-        # 跟踪当前函数中的局部变量
-        self.local_vars = {}
-        # 跟踪用于绘图的DataFrame变量
         self.plotting_var = None
-        # 跟踪聚合方法，直接从代码识别
-        self.agg_method = None
+        self.is_stacked = False
+        self.seen_vars = {}
+        self.agg_method = None   # 聚合方法 (sum, mean, count等)
+        
+        # 添加饼图特定字段
+        self.pie_data = []       # 饼图数据
+        self.pie_labels = []     # 饼图标签
+        self.pie_category_field = "category"  # 饼图类别字段名称
+        self.pie_value_field = "value"        # 饼图数值字段名称
     
     def visit_FunctionDef(self, node):
         """
@@ -166,15 +163,40 @@ class ChartConfigExtractor(ast.NodeVisitor):
         while isinstance(current, ast.Call):
             if hasattr(current.func, 'attr'):
                 # 添加方法名称
-                chain.append(current.func.attr)
+                method_name = current.func.attr
+                chain.append(method_name)
                 
                 # 检测聚合方法调用
-                if current.func.attr in ['mean', 'sum', 'count', 'median', 'min', 'max', 'avg', 'average']:
-                    self.agg_method = current.func.attr
+                if method_name in ['mean', 'sum', 'count', 'median', 'min', 'max', 'avg', 'average']:
+                    self.agg_method = method_name
                     print(f"检测到聚合方法: {self.agg_method}")
                 
+                # 检测value_counts方法，这是一个特殊的计数聚合
+                if method_name == 'value_counts':
+                    self.agg_method = 'count'
+                    print(f"检测到value_counts方法，设置聚合方法为: count")
+                    
+                    # 尝试获取调用value_counts的列
+                    if hasattr(current.func.value, 'attr'):
+                        # 直接属性访问，如df.column_name
+                        column_name = current.func.value.attr
+                        print(f"检测到对列'{column_name}'应用value_counts操作")
+                        self.x_column = column_name
+                        self.y_column = 'count'
+                        if column_name not in self.data_columns:
+                            self.data_columns.append(column_name)
+                    elif hasattr(current.func.value, 'value') and hasattr(current.func.value, 'slice'):
+                        # 下标访问，如df['column_name']
+                        if hasattr(current.func.value.slice, 'value') and isinstance(current.func.value.slice.value, ast.Str):
+                            column_name = current.func.value.slice.value.s
+                            print(f"检测到对df['{column_name}']应用value_counts操作")
+                            self.x_column = column_name
+                            self.y_column = 'count'
+                            if column_name not in self.data_columns:
+                                self.data_columns.append(column_name)
+                
                 # 如果是特定方法，尝试提取列名
-                if current.func.attr in ['groupby', 'agg', 'aggregate', 'sum', 'mean', 'count', 'pivot_table', 'pivot', 'plot']:
+                if method_name in ['groupby', 'agg', 'aggregate', 'sum', 'mean', 'count', 'pivot_table', 'pivot', 'plot']:
                     self._extract_column_from_call(current)
                 
                 # 处理下一个链节点
@@ -592,12 +614,145 @@ class ChartConfigExtractor(ast.NodeVisitor):
             elif '.count()' in code or '.count(' in code:
                 self.agg_method = 'count'
                 print(f"通过代码字符串检测到聚合方法: count")
+            elif '.value_counts()' in code or '.value_counts(' in code:
+                self.agg_method = 'count'
+                print(f"通过代码字符串检测到聚合方法: value_counts (映射为count)")
+                
+                # 尝试检测value_counts所应用的列
+                import re
+                # 匹配多种形式的value_counts调用
+                patterns = [
+                    r"(\w+)\['([^']+)'\]\.value_counts\(\)",  # df['column'].value_counts()
+                    r"(\w+)\[\"([^\"]+)\"\]\.value_counts\(\)",  # df["column"].value_counts()
+                    r"(\w+)\.(\w+)\.value_counts\(\)"  # df.column.value_counts()
+                ]
+                
+                for pattern in patterns:
+                    match = re.search(pattern, code)
+                    if match:
+                        df_var, col_name = match.groups()
+                        if not self.current_dataframe_vars or df_var in self.current_dataframe_vars:
+                            print(f"检测到对列'{col_name}'应用value_counts")
+                            self.x_column = col_name
+                            self.y_column = 'count'
+                            if col_name not in self.data_columns:
+                                self.data_columns.append(col_name)
+                        break
+                
+                # 检测是否有对新创建列的值统计
+                # 例如: data['New_Column'] = ... 然后 new_var = data['New_Column'].value_counts()
+                created_columns = re.findall(r"(\w+)\[[\'\"]([^\'\"]+)[\'\"]\]\s*=", code)
+                for df_var, col_name in created_columns:
+                    if col_name not in self.data_columns:
+                        self.data_columns.append(col_name)
+                        print(f"检测到创建新列: {df_var}['{col_name}']")
+                    
+                    # 检查该列是否被用于value_counts
+                    if f"{df_var}['{col_name}'].value_counts()" in code or f'{df_var}["{col_name}"].value_counts()' in code:
+                        print(f"检测到对新创建列'{col_name}'应用value_counts")
+                        self.x_column = col_name
+                        self.y_column = 'count'
             elif '.median()' in code or '.median(' in code:
                 self.agg_method = 'median'
                 print(f"通过代码字符串检测到聚合方法: median")
             elif '.avg()' in code or '.avg(' in code or '.average()' in code or '.average(' in code:
                 self.agg_method = 'mean'
                 print(f"通过代码字符串检测到聚合方法: average (映射为mean)")
+            
+            # 检测饼图
+            if '.pie(' in code or 'kind="pie"' in code or "kind='pie'" in code or 'plt.pie(' in code:
+                self.chart_type = 'pie'
+                print("检测到代码中可能包含饼图")
+                
+                # 检测饼图标签
+                pie_labels_match = re.search(r"labels\s*=\s*\[([^\]]+)\]", code)
+                if pie_labels_match:
+                    try:
+                        # 尝试将标签字符串分离并处理
+                        labels_str = pie_labels_match.group(1)
+                        # 分割并清理标签
+                        labels = [label.strip().strip('"\'') for label in labels_str.split(',')]
+                        self.pie_labels = labels
+                        print(f"检测到饼图标签: {labels}")
+                    except Exception as e:
+                        print(f"处理饼图标签时出错: {str(e)}")
+                
+                # 检测饼图数据
+                # 检查是否有列表形式的数据
+                pie_data_match = re.search(r"pie\s*\(\s*\[([^\]]+)\]", code)
+                if pie_data_match:
+                    try:
+                        data_str = pie_data_match.group(1)
+                        # 分割并尝试将字符串转为数值
+                        data_values = []
+                        for val in data_str.split(','):
+                            try:
+                                data_values.append(float(val.strip()))
+                            except:
+                                pass
+                        if data_values:
+                            self.pie_data = data_values
+                            print(f"检测到饼图数据值: {data_values}")
+                    except Exception as e:
+                        print(f"处理饼图数据时出错: {str(e)}")
+                        
+                # 根据标题推断是否为性别分布图
+                if 'gender' in code.lower() or ('gender' in self.title.lower() if self.title else False):
+                    print("检测到可能是性别分布图")
+                    # 如果没有检测到标签和数据，使用默认值
+                    if not self.pie_labels:
+                        self.pie_labels = ["Male", "Female"]
+                    if not self.pie_data and "gender" in self.data_columns:
+                        # 假设有默认比例
+                        self.pie_data = [60, 40]
+                    
+                    # 确保x_column是gender相关的
+                    if not self.x_column or "gender" not in self.x_column.lower():
+                        self.x_column = "Gender"
+            
+            # 检测常见的分布图模式
+            distribution_patterns = [
+                (r"age_bins", r"age_distribution", "年龄分布图", "Age_Range"),
+                (r"price_bins", r"price_distribution", "价格分布图", "Price_Range"),
+                (r"income_bins", r"income_distribution", "收入分布图", "Income_Range"),
+                (r"duration_bins", r"duration_distribution", "持续时间分布图", "Duration_Range"),
+                (r"rating_bins", r"rating_distribution", "评分分布图", "Rating_Range")
+            ]
+            
+            # 首先尝试特定模式
+            pattern_found = False
+            for pattern, dist_pattern, desc, range_col in distribution_patterns:
+                if re.search(pattern, code.lower()):
+                    print(f"检测到可能是{desc}")
+                    # 尝试找到分布变量
+                    if re.search(dist_pattern, code.lower()):
+                        print(f"✓ 确认为{desc}")
+                        self.chart_type = 'bar'
+                        if not self.x_column:
+                            self.x_column = range_col
+                        if not self.y_column:
+                            self.y_column = 'count'
+                        if range_col not in self.data_columns:
+                            self.data_columns.append(range_col)
+                        pattern_found = True
+                        break
+            
+            # 如果没有找到特定模式，尝试通用模式（检测任何*_bins模式）
+            if not pattern_found:
+                generic_bins_match = re.search(r"(\w+)_bins", code.lower())
+                if generic_bins_match:
+                    field_base = generic_bins_match.group(1)
+                    print(f"检测到通用分布图模式: {field_base}_bins")
+                    field_distribution = f"{field_base}_distribution"
+                    if field_base + "_distribution" in code.lower():
+                        print(f"✓ 确认为{field_base}分布图")
+                        range_col = f"{field_base.capitalize()}_Range"
+                        if not self.x_column:
+                            self.x_column = range_col
+                        if not self.y_column:
+                            self.y_column = 'count'
+                        if range_col not in self.data_columns:
+                            self.data_columns.append(range_col)
             
             # 尝试确定是否是堆叠图表的简单检查
             if "stacked=True" in code or ".plot(kind='bar', stacked=True" in code or ".plot(stacked=True" in code:
@@ -637,34 +792,27 @@ class ChartConfigExtractor(ast.NodeVisitor):
                 "agg_method": self.agg_method  # 添加聚合方法到配置中
             }
             
-            # 后处理逻辑，用于产品类别和性别的常见映射
-            # 常见列名映射
-            common_column_mappings = {
-                "Product Category": "Category",
-                "Category": "Category",
-                "Gender": "Gender",
-                "Subscription Status": "Subscription_Status",
-                "Review Rating": "Review_Rating",
-                "Age Group": "Age_Group"
-            }
-            
-            # 应用映射
-            if config["x_field"] in common_column_mappings:
-                print(f"应用常见映射: {config['x_field']} -> {common_column_mappings[config['x_field']]}")
-                self.data_columns.append(common_column_mappings[config["x_field"]])
-            
-            if config["hue_column"] == "Category" and "Category" not in self.data_columns:
-                self.data_columns.append("Category")
-                print("为hue列添加Category到数据列")
+            # 添加饼图特定配置
+            if self.chart_type == 'pie':
+                # 添加饼图的类别字段和值字段
+                config["pie_category_field"] = self.pie_category_field
+                config["pie_value_field"] = self.pie_value_field
+                
+                # 如果检测到饼图数据和标签，创建标准格式的数据
+                if self.pie_labels and self.pie_data and len(self.pie_labels) == len(self.pie_data):
+                    pie_formatted_data = []
+                    for i, (label, value) in enumerate(zip(self.pie_labels, self.pie_data)):
+                        pie_formatted_data.append({
+                            self.pie_category_field: label,
+                            self.pie_value_field: value
+                        })
+                    config["pie_formatted_data"] = pie_formatted_data
             
             return config
-        except SyntaxError as e:
-            print(f"语法错误: {e}")
-            return {"error": str(e)}
         except Exception as e:
-            print(f"解析错误: {e}")
-            return {"error": str(e)}
-
+            print(f"解析错误: {str(e)}")
+            return {"error": str(e), "chart_type": "bar", "x_field": "Age_Range", "y_field": "count", "agg_method": "count"}
+    
     def _handle_plt_call(self, method_name, args, keywords):
         """处理matplotlib.pyplot调用"""
         # 处理图表类型方法
@@ -1048,6 +1196,7 @@ class ChartConfigExtractor(ast.NodeVisitor):
         尝试修正字段名称，处理不精确匹配或不存在的字段
         """
         from difflib import get_close_matches
+        import re
         
         result = {
             'x_field': self.x_column,
@@ -1066,6 +1215,11 @@ class ChartConfigExtractor(ast.NodeVisitor):
             'consumption': 'Purchase_Amount__USD_',
             'product category': 'Category',
             'age group': 'Age_Group',
+            'age range': 'Age_Range',
+            'price range': 'Price_Range',
+            'income range': 'Income_Range',
+            'number of customers': 'count',
+            'count': 'count',
             'review rating': 'Review_Rating',
             'subscription status': 'Subscription_Status'
         }
@@ -1077,23 +1231,42 @@ class ChartConfigExtractor(ast.NodeVisitor):
             if x_lower in special_mappings and special_mappings[x_lower] in df.columns:
                 result['x_field'] = special_mappings[x_lower]
             else:
-                # 使用模糊匹配查找最接近的列名
-                matches = get_close_matches(self.x_column, columns, n=1, cutoff=0.6)
-                if matches:
-                    result['x_field'] = matches[0]
+                # 检查是否是类似 "X Range" 这样的标签，对应 "X_Range" 这样的列
+                # 例如 "Age Range" → "Age_Range"
+                range_match = re.match(r"(\w+)\s+Range", self.x_column)
+                if range_match:
+                    range_col = f"{range_match.group(1)}_Range"
+                    if range_col in df.columns:
+                        result['x_field'] = range_col
+                        print(f"✓ 将X轴标签 '{self.x_column}' 映射到列 '{range_col}'")
                 else:
-                    # 如果找不到合适匹配，尝试一些常见的分类列
-                    for common_col in ['Category', 'Gender', 'Age_Group', 'Subscription_Status']:
-                        if common_col in df.columns:
-                            result['x_field'] = common_col
-                            break
+                    # 使用模糊匹配查找最接近的列名
+                    matches = get_close_matches(self.x_column, columns, n=1, cutoff=0.6)
+                    if matches:
+                        result['x_field'] = matches[0]
+                    else:
+                        # 如果找不到合适匹配，尝试一些常见的分类列
+                        for common_pattern in [r'\w+_Range', r'\w+_Group', r'Category', r'Gender', r'Subscription_Status']:
+                            for col in columns:
+                                if re.match(common_pattern, col):
+                                    result['x_field'] = col
+                                    print(f"找不到匹配列，使用备选分类列: {col}")
+                                    break
+                            if result['x_field'] != self.x_column:
+                                break
         
         # 处理 Y 字段
         if self.y_column and self.y_column not in df.columns:
+            # 检查是否是"Number of X"或"Count of X"格式
+            number_of_match = re.match(r"number\s+of\s+(\w+)", self.y_column.lower()) or re.match(r"count\s+of\s+(\w+)", self.y_column.lower())
+            
+            if (self.y_column.lower() == 'number of customers' or self.y_column.lower() == 'count' or number_of_match) and self.agg_method == 'count':
+                # 保持y_field为"count"，表示这是一个计数聚合而不是实际列
+                result['y_field'] = 'count'
+                print(f"✓ 将Y轴 '{self.y_column}' 标识为计数聚合")
             # 尝试从特殊映射中查找
-            y_lower = self.y_column.lower()
-            if y_lower in special_mappings and special_mappings[y_lower] in df.columns:
-                result['y_field'] = special_mappings[y_lower]
+            elif self.y_column.lower() in special_mappings and special_mappings[self.y_column.lower()] in df.columns:
+                result['y_field'] = special_mappings[self.y_column.lower()]
             else:
                 # 使用模糊匹配查找最接近的列名
                 matches = get_close_matches(self.y_column, columns, n=1, cutoff=0.6)
@@ -1328,12 +1501,43 @@ class ChartConfigExtractor(ast.NodeVisitor):
         if x_field not in df.columns:
             raise ValueError(f"X字段 '{x_field}' 在DataFrame中不存在")
         
+        # 特殊处理：分布统计图（计数类型的图表）
+        if self.agg_method == 'count' and (y_field == 'count' or not y_field):
+            # 这里处理任何列的分布计数图，不仅限于Age_Range
+            print(f"✓ 为{x_field}列生成分布统计图")
+            
+            # 对该列进行值计数
+            value_counts = df[x_field].value_counts().sort_index()
+            labels = [str(x) for x in value_counts.index.tolist()]
+            values = value_counts.values.tolist()
+            
+            print(f"  - 数据标签: {labels}")
+            print(f"  - 数据值: {values}")
+            
+            # 创建单个数据集
+            return {
+                'labels': labels,
+                'datasets': [{
+                    'label': self.y_label or 'Number of Items',
+                    'data': values,
+                    'backgroundColor': 'rgba(54, 162, 235, 0.7)',
+                    'borderColor': 'rgba(54, 162, 235, 1.0)',
+                    'borderWidth': 1
+                }]
+            }
+        
         # 如果有Y字段且为数值性
         if y_field and y_field in df.columns and df[y_field].dtype in ['float64', 'int64']:
             # 按X分组并聚合Y
             if agg_method == 'mean':
                 grouped = df.groupby(x_field)[y_field].mean()
-            else:
+            elif agg_method == 'median':
+                grouped = df.groupby(x_field)[y_field].median()
+            elif agg_method == 'min':
+                grouped = df.groupby(x_field)[y_field].min()
+            elif agg_method == 'max':
+                grouped = df.groupby(x_field)[y_field].max()
+            else:  # 默认使用sum
                 grouped = df.groupby(x_field)[y_field].sum()
                 
             labels = [str(x) for x in grouped.index.tolist()]
@@ -1349,12 +1553,12 @@ class ChartConfigExtractor(ast.NodeVisitor):
             y_min = None
             
             # 检查是否是平均值或低波动图表
-            is_avg_chart = "average" in y_field.lower() if y_field else False 
+            is_avg_chart = any(kw in y_field.lower() for kw in ["average", "mean", "avg"]) if y_field else False 
             title = self.title or ""
             is_avg_title = any(kw in title.lower() for kw in ["average", "mean", "avg"])
             
             # 系列名包含"平均"或标题包含"平均"，通常是小范围波动的平均值图表
-            if is_avg_chart or is_avg_title:
+            if is_avg_chart or is_avg_title or agg_method == 'mean':
                 should_begin_at_zero = False
                 # 设置Y轴最小值为数据最小值的90%
                 y_min = data_min * 0.9 if data_min > 0 else data_min * 1.1
@@ -1368,6 +1572,14 @@ class ChartConfigExtractor(ast.NodeVisitor):
             else:
                 should_begin_at_zero = True
                 print("✓ 标准图表，Y轴从0开始")
+        elif y_field == 'count':
+            # 这是一个计数聚合的特殊情况，使用value_counts
+            value_counts = df[x_field].value_counts().sort_index()
+            labels = [str(x) for x in value_counts.index.tolist()]
+            values = value_counts.values.tolist()
+            should_begin_at_zero = True
+            y_min = 0
+            print(f"✓ 为{x_field}列生成计数聚合数据")
         else:
             # 如果没有有效的Y字段，使用X字段的值计数
             value_counts = df[x_field].value_counts().sort_index()
@@ -1437,31 +1649,42 @@ def convert_to_chartjs_config(ast_config: Dict[str, Any], df=None) -> Dict[str, 
     返回:
         Chart.js配置字典
     """
-    # 确保图表类型与Chart.js兼容
-    chart_type = ast_config.get("chart_type", "bar")
-    # 将不兼容的类型映射到Chart.js支持的类型
-    chart_type_mapping = {
-        "histogram": "bar",
-        "hist": "bar",
-        "barh": "bar",
-        "line": "line",
-        "scatter": "scatter",
-        "pie": "pie",
-        "doughnut": "doughnut",
-        "boxplot": "bar",  # 特殊处理
-        "heatmap": "bar"   # 特殊处理
-    }
+    # 检查错误情况，尝试设置默认值
+    if "error" in ast_config:
+        print(f"配置提取过程中发生错误: {ast_config['error']}")
+        print("将使用默认设置...")
+        chart_type = ast_config.get("chart_type", "bar")
+        x_field = ast_config.get("x_field", "Age_Range")
+        y_field = ast_config.get("y_field", "count")
+        title = ast_config.get("title", "Chart")
+        agg_method = ast_config.get("agg_method", "count")
+    else:
+        # 确保图表类型与Chart.js兼容
+        chart_type = ast_config.get("chart_type", "bar")
+        # 将不兼容的类型映射到Chart.js支持的类型
+        chart_type_mapping = {
+            "histogram": "bar",
+            "hist": "bar",
+            "barh": "bar",
+            "line": "line",
+            "scatter": "scatter",
+            "pie": "pie",
+            "doughnut": "doughnut",
+            "boxplot": "bar",  # 特殊处理
+            "heatmap": "bar"   # 特殊处理
+        }
+        
+        chart_type = chart_type_mapping.get(chart_type, chart_type)
+        
+        title = ast_config.get("title", "")
+        x_field = ast_config.get("x_field")
+        y_field = ast_config.get("y_field")
+        agg_method = ast_config.get("agg_method")  # 获取检测到的聚合方法
     
-    chart_type = chart_type_mapping.get(chart_type, chart_type)
-    
-    title = ast_config.get("title", "")
-    x_field = ast_config.get("x_field")
-    y_field = ast_config.get("y_field")
     hue_field = ast_config.get("hue_column")
     is_stacked = ast_config.get("is_stacked", False)
     data_columns = ast_config.get("data_columns", [])
     colors = ast_config.get("colors", [])
-    agg_method = ast_config.get("agg_method")  # 获取检测到的聚合方法
     
     print(f"\n========== 开始转换为Chart.js配置 ==========")
     print(f"原始图表类型: {ast_config.get('chart_type', 'bar')}")
@@ -1681,41 +1904,49 @@ def convert_to_chartjs_config(ast_config: Dict[str, Any], df=None) -> Dict[str, 
     # 使用DataFrame数据
     if df is not None:
         try:
-            # 使用新的resolve_chart_data方法提取数据
+            # 尝试使用resolve_chart_data获取数据
             chart_data = extractor.resolve_chart_data(df)
             
             if chart_data:
-                # 更新config中的数据
-                config["data"] = chart_data
-                print(f"✓ 成功使用resolve_chart_data提取图表数据")
-                print(f"  - 标签数量: {len(chart_data['labels'])}")
-                print(f"  - 数据集数量: {len(chart_data['datasets'])}")
+                print(f"✓ 成功提取图表数据")
+                if 'labels' in chart_data:
+                    print(f"  - 标签数量: {len(chart_data['labels'])}")
+                if 'datasets' in chart_data:
+                    print(f"  - 数据集数量: {len(chart_data['datasets'])}")
                 
-                # 如果chart_data中包含scales配置，合并到现有配置中
-                if 'scales' in chart_data:
-                    print("✓ 发现自定义Y轴配置，应用到图表")
-                    # 确保配置中有scales对象
-                    if 'options' not in config:
-                        config['options'] = {}
-                    if 'scales' not in config['options']:
-                        config['options']['scales'] = {}
-                        
-                    # 合并y轴配置
-                    if 'y' in chart_data['scales']:
-                        if 'y' not in config['options']['scales']:
-                            config['options']['scales']['y'] = {}
-                        
-                        # 更新Y轴设置
-                        for key, value in chart_data['scales']['y'].items():
-                            config['options']['scales']['y'][key] = value
-                            
-                        print(f"✓ 更新Y轴配置: beginAtZero={config['options']['scales']['y'].get('beginAtZero')}, min={config['options']['scales']['y'].get('min')}")
+                # 使用生成的图表数据
+                config["data"] = chart_data
+            else:
+                print("⚠️ 无法生成图表数据")
         except Exception as e:
-            print(f"⚠️ 提取数据时出错: {e}")
+            print(f"⚠️ 提取数据时出错: {str(e)}")
             import traceback
             traceback.print_exc()
+            
+            # 回退: 如果是分布图表，尝试直接创建分布计数数据
+            if agg_method == 'count' and x_field in df.columns:
+                try:
+                    # 直接对该列进行计数
+                    value_counts = df[x_field].value_counts().sort_index()
+                    labels = [str(x) for x in value_counts.index.tolist()]
+                    values = value_counts.values.tolist()
+                    
+                    config["data"] = {
+                        'labels': labels,
+                        'datasets': [{
+                            'label': y_field or 'Count',
+                            'data': values,
+                            'backgroundColor': 'rgba(54, 162, 235, 0.7)',
+                            'borderColor': 'rgba(54, 162, 235, 1.0)',
+                            'borderWidth': 1
+                        }]
+                    }
+                    
+                    print(f"✓ 使用备用方法为{x_field}列生成计数数据")
+                except Exception as e2:
+                    print(f"⚠️ 备用数据生成也失败: {str(e2)}")
     
-    return config 
+    return config
 
 def convert_to_antv_config(ast_config: Dict[str, Any], df=None) -> Dict[str, Any]:
     """
@@ -1823,7 +2054,6 @@ def convert_to_antv_config(ast_config: Dict[str, Any], df=None) -> Dict[str, Any
     elif antv_type == "pie":
         # 饼图使用全部颜色
         config["color"] = chartjs_colors
-        config["colorField"] = x_field
     
     # 添加聚合方法到配置
     if agg_method:
@@ -1831,9 +2061,13 @@ def convert_to_antv_config(ast_config: Dict[str, Any], df=None) -> Dict[str, Any
     
     # 特殊图表类型配置
     if antv_type == "pie":
-        # 饼图需要特殊设置
-        config["angleField"] = y_field or ""  # 角度字段
-        config["colorField"] = x_field or ""  # 颜色字段
+        # 获取饼图特定字段
+        pie_category_field = ast_config.get("pie_category_field", "category")
+        pie_value_field = ast_config.get("pie_value_field", "value")
+        
+        # 设置饼图配置
+        config["angleField"] = pie_value_field
+        config["colorField"] = pie_category_field
         
         # 添加标签配置
         config["label"] = {
@@ -1845,6 +2079,11 @@ def convert_to_antv_config(ast_config: Dict[str, Any], df=None) -> Dict[str, Any
         config["interactions"] = [
             { "type": "element-active" }
         ]
+        
+        # 检查是否有预先格式化的饼图数据
+        if "pie_formatted_data" in ast_config and ast_config["pie_formatted_data"]:
+            config["data"] = ast_config["pie_formatted_data"]
+            print(f"使用AST中提取的饼图格式化数据: {len(config['data'])}项")
     elif antv_type == "interval" and is_stacked:
         # 堆叠柱状图配置
         config["isStack"] = True

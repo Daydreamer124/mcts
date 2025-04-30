@@ -47,3 +47,5 @@ eIcon?
 logs/
 
 node_modules
+
+test_chart_extractor.py
