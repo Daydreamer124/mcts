@@ -7,7 +7,7 @@ You are a data visualization expert. Your task is to analyze Python data visuali
 
 ## Your Task:
 Analyze the code above and extract the following information:
-1. The type of chart being created (bar, line, scatter, pie, etc.)
+1. The type of chart being created (bar, line, scatter, pie, boxplot, histogram, etc.)
 2. The title of the chart (if specified)
 3. The fields used for x-axis and y-axis
 4. Any aggregation method used (sum, mean, count, etc.)
@@ -22,30 +22,33 @@ Analyze the code above and extract the following information:
 - For pie charts, identify the category field and value field
 - If the code creates new columns with operations like df['New_Column'] = ..., or uses pd.cut() to bin data into categories, identify these as derived columns
 - For binning operations like pd.cut(data['Age'], bins=age_bins, labels=age_labels), the resulting column (e.g., 'Age_Group') should be identified as a derived column and potentially as the x_field if used in plotting
+- If the code uses plt.boxplot(), sns.boxplot(), or similar functions, identify the chart_type as "boxplot"
+- For boxplots, identify the categorical field used for grouping (usually x parameter) and the numerical field showing distribution (usually y parameter)
+- Note that boxplots display distribution data, so do not use any aggregation method (set as "none")
 
 ## Expected Output Format:
 Return a JSON object with the extracted configuration. Include only the fields that you can confidently determine from the code:
 
-{
-  "chart_type": "bar/line/scatter/pie/etc",
+{{
+  "chart_type": "bar/line/scatter/pie/boxplot/histogram/etc",
   "title": "Chart title if specified",
   "x_field": "Field used for x-axis",
   "y_field": "Field used for y-axis/values",
-  "agg_method": "Aggregation method if present (sum, mean, count, etc.)",
+  "agg_method": "Aggregation method if present (sum, mean, count, etc.) or 'none' for distribution plots like boxplots",
   "hue_column": "Field used for grouping/coloring if present",
   "is_stacked": true/false,
   "data_columns": ["list", "of", "referenced", "columns"],
   "derived_columns": [
-    {
+    {{
       "name": "derived column name",
       "source_column": "original column it's derived from",
       "derivation_type": "bin/transform/calculate",
-      "parameters": {
+      "parameters": {{
         "relevant": "parameters",
         "used": "for derivation"
-      }
-    }
+      }}
+    }}
   ]
-}
+}}
 
 Return ONLY the JSON without any additional text or explanations. 

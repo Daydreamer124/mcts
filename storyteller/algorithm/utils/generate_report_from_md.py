@@ -4,8 +4,8 @@ import os
 import argparse
 from pathlib import Path
 import random
-import urllib.parse  # 添加URL编码支持
-import json  # 导入json模块
+import urllib.parse
+import json
 
 def parse_markdown(md_path):
     with open(md_path, 'r', encoding='utf-8') as f:
@@ -144,169 +144,6 @@ def convert_to_relative_path(path):
             return path
     return path
 
-# 添加一个通用函数来处理Chart.js配置
-def prepare_chartjs_config(sections):
-    """
-    为sections中的所有图表准备Chart.js配置
-    返回：
-    - chart_configs: 包含所有图表配置的列表
-    - chart_id_counter: 用于生成唯一图表ID的计数器
-    """
-    # 用于存储所有图表配置的数组
-    chart_configs = []
-    
-    # 为每个图表创建唯一的ID
-    chart_id_counter = 0
-    
-    for section in sections:
-        for chart in section.get("charts", []):
-            config_path = chart.get("config", "")
-            img_path = chart.get("img", "")
-            
-            if config_path:
-                # 如果有配置文件，使用Chart.js渲染
-                chart_id = f"chart_{chart_id_counter}"
-                chart_id_counter += 1
-                
-                # 读取JSON配置文件内容
-                try:
-                    with open(config_path, 'r', encoding='utf-8') as f:
-                        config_content = json.load(f)
-                except Exception as e:
-                    print(f"读取配置文件失败: {config_path}, 错误: {e}")
-                    config_content = {}
-                
-                # 获取相对路径并保存图片路径
-                relative_img_path = convert_to_relative_path(img_path)
-                
-                # 保存配置信息
-                chart_configs.append({
-                    "chartId": chart_id,
-                    "configContent": config_content,  # 直接存储JSON对象
-                    "imgPath": relative_img_path      # 存储相对路径
-                })
-                
-                # 在图表对象上添加chart_id属性，以便模板函数使用
-                chart["chart_id"] = chart_id
-    
-    return chart_configs, chart_id_counter
-
-# 添加生成通用Chart.js脚本的函数
-def generate_chartjs_script(chart_configs):
-    """
-    根据图表配置生成通用的Chart.js初始化脚本
-    """
-    if not chart_configs:
-        return ""
-        
-    chart_script = """
-<script>
-// 存储图表配置的对象
-const chartConfigs = {};
-// 存储图表实例的对象
-const chartInstances = {};
-
-// 初始化图表的函数
-function initializeChart(chartId, configObj, fallbackImgPath) {
-    // 获取canvas元素
-    const canvas = document.getElementById(chartId);
-    
-    if (!canvas) {
-        console.error(`Canvas element with ID ${chartId} not found`);
-        return;
-    }
-    
-    // 保存回退图片路径
-    canvas.setAttribute('data-fallback-img', fallbackImgPath);
-    
-    try {
-        console.log(`Initializing chart ${chartId}`);
-        
-        // 创建Chart.js图表
-        const chart = new Chart(canvas, {
-            type: configObj.chart_type || 'bar',
-            data: configObj.data || {},
-            options: configObj.options || {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: configObj.title || ''
-                    }
-                }
-            }
-        });
-        
-        // 存储图表实例以便后续引用
-        chartInstances[chartId] = chart;
-        
-        // 标记为已初始化
-        canvas.setAttribute('data-initialized', 'true');
-        
-        return chart;
-    } catch (error) {
-        console.error(`Error creating chart ${chartId}:`, error);
-        fallbackToImage(chartId);
-        return null;
-    }
-}
-
-// 回退到静态图片
-function fallbackToImage(chartId) {
-    const canvas = document.getElementById(chartId);
-    if (!canvas) return;
-    
-    const fallbackImgPath = canvas.getAttribute('data-fallback-img');
-    if (!fallbackImgPath) return;
-    
-    const container = canvas.parentElement;
-    if (!container) return;
-    
-    console.log(`Falling back to image for ${chartId}: ${fallbackImgPath}`);
-    
-    // 创建图片元素
-    const img = document.createElement('img');
-    img.src = fallbackImgPath;
-    img.alt = 'Chart fallback image';
-    img.style.width = '100%';
-    
-    // 替换canvas
-    container.innerHTML = '';
-    container.appendChild(img);
-}
-
-// 页面加载完成后初始化所有图表
-document.addEventListener('DOMContentLoaded', function() {
-"""
-    
-    # 首先添加所有图表配置
-    for i, config in enumerate(chart_configs):
-        # 将Python字典转换为JSON字符串
-        json_str = json.dumps(config['configContent'])
-        chart_script += f"    chartConfigs.chart_{i} = {json_str};\n"
-    
-    # 然后为每个图表添加初始化代码
-    for i, config in enumerate(chart_configs):
-        chart_script += f"    initializeChart('{config['chartId']}', chartConfigs.chart_{i}, '{config['imgPath']}');\n"
-    
-    chart_script += """
-    // 添加一个定时器检查图表是否正确渲染
-    setTimeout(function() {
-        document.querySelectorAll('canvas[id^="chart_"]').forEach(canvas => {
-            const chartId = canvas.id;
-            // 检查该图表是否已标记为初始化
-            if (!canvas.getAttribute('data-initialized') || !chartInstances[chartId]) {
-                console.log(`Chart ${chartId} was not initialized properly, falling back to image`);
-                fallbackToImage(chartId);
-            }
-        });
-    }, 2000); // 延长等待时间到2秒
-});
-</script>
-"""
-    return chart_script
-
 # 添加一个通用函数来处理AntV G2配置
 def prepare_antv_config(sections):
     """
@@ -335,9 +172,21 @@ def prepare_antv_config(sections):
                 try:
                     with open(config_path, 'r', encoding='utf-8') as f:
                         config_content = json.load(f)
-                except Exception as e:
-                    print(f"读取配置文件失败: {config_path}, 错误: {e}")
-                    config_content = {}
+                        
+                    # 转换为AntV G2配置
+                    antv_config = {
+                        'type': config_content.get('chartType', 'interval'),
+                        'data': config_content.get('data', []),
+                        'xField': config_content.get('xField'),
+                        'yField': config_content.get('yField'),
+                        'seriesField': config_content.get('seriesField'),
+                        'isStack': config_content.get('isStack', False),
+                        'title': config_content.get('title'),
+                        'xTitle': config_content.get('xTitle'),
+                        'yTitle': config_content.get('yTitle'),
+                        'color': config_content.get('color'),
+                        'autoFit': True
+                    }
                 
                 # 获取相对路径并保存图片路径
                 relative_img_path = convert_to_relative_path(img_path)
@@ -345,14 +194,18 @@ def prepare_antv_config(sections):
                 # 保存配置信息
                 chart_configs.append({
                     "chartId": chart_id,
-                    "configContent": config_content,  # 直接存储JSON对象
-                    "imgPath": relative_img_path      # 存储相对路径
+                        "configContent": antv_config,
+                        "imgPath": relative_img_path
                 })
                 
                 # 在图表对象上添加chart_id属性，以便模板函数使用
                 chart["chart_id"] = chart_id
                 # 标记为AntV图表
                 chart["is_antv"] = True
+                    
+                except Exception as e:
+                    print(f"读取配置文件失败: {config_path}, 错误: {e}")
+                    continue
     
     return chart_configs, chart_id_counter
 
@@ -365,94 +218,108 @@ def generate_antv_script(chart_configs):
         return ""
         
     chart_script = """
-<script src=\"https://unpkg.com/@antv/g2@4.2.8/dist/g2.min.js\"></script>
 <script>
-// 存储图表配置的对象
-const antvConfigs = {};
 // 存储图表实例的对象
-const antvInstances = {};
+const chartInstances = {};
 
 // 初始化图表的函数
-function initializeAntvChart(chartId, configObj, fallbackImgPath) {
-    // 获取container元素
+function initializeChart(chartId, configObj, fallbackImgPath) {
     const container = document.getElementById(chartId);
     
     if (!container) {
-        console.error(`Container element with ID ${chartId} not found`);
+        console.error(`Container for chart ${chartId} not found`);
         return;
     }
     
-    // 保存回退图片路径
-    container.setAttribute('data-fallback-img', fallbackImgPath);
-    
     try {
-        console.log(`Initializing AntV chart ${chartId}`);
-        
-        // 配置项解构
-        const {
-            type,
-            data,
-            xField,
-            yField,
-            seriesField,
-            isStack,
-            title,
-            color,
-            autoFit,
-            ...restConfig
-        } = configObj;
+        console.log(`Initializing chart ${chartId} with config:`, configObj);
         
         // 创建AntV G2图表
         const chart = new G2.Chart({
             container: chartId,
-            autoFit: autoFit || true,
+            autoFit: true,
             height: 400,
             padding: [30, 40, 60, 60]
         });
         
         // 设置数据
-        chart.data(data || []);
+        chart.data(configObj.data || []);
         
-        // 动态选择geometry
+        // 配置坐标轴和图形
         let geometry;
-        if (type === 'line') {
+        if (configObj.type === 'line') {
             geometry = chart.line();
-        } else if (type === 'point') {
+        } else if (configObj.type === 'point') {
             geometry = chart.point();
-        } else if (type === 'interval') {
+        } else if (configObj.type === 'interval') {
             geometry = chart.interval();
-        } else if (type === 'pie') {
-            // 饼图特殊处理
-            geometry = chart.interval().position('1*value').adjust('stack');
+        } else if (configObj.type === 'pie') {
+            geometry = chart.interval().adjust('stack').coord('theta');
+        } else if (configObj.type === 'box') {
+            // 处理箱线图类型
+            geometry = chart.box();
+            // 确保有必要的字段
+            if (configObj.xField && configObj.yField) {
+                geometry.position(`${configObj.xField}*${configObj.yField}`);
+            }
+            // 添加分组字段
+            if (configObj.groupField) {
+                geometry.adjust([
+                    {
+                        type: 'dodge',
+                        marginRatio: 0.5
+                    }
+                ]);
+            }
+            // 添加样式
+            if (configObj.boxStyle) {
+                geometry.style(configObj.boxStyle);
+            }
+            // 配置离群点样式
+            if (configObj.outliersStyle) {
+                geometry.outliers().style(configObj.outliersStyle);
+            }
+            // 添加颜色映射
+            if (configObj.colorField) {
+                geometry.color(configObj.colorField, configObj.color || 'category10');
+            }
+            // 跳过下面的通用position设置
+            configObj.positionConfigured = true;
         } else {
             geometry = chart.interval();
         }
         
         // 配置position
-        if (type !== 'pie') {
-            if (xField && yField) {
-                geometry.position(`${xField}*${yField}`);
+        if (configObj.type !== 'pie' && !configObj.positionConfigured) {
+            if (configObj.xField && configObj.yField) {
+                geometry.position(`${configObj.xField}*${configObj.yField}`);
+            }
+        } else if (configObj.type === 'pie') {
+            if (configObj.angleField && configObj.colorField) {
+                geometry.position('1*' + configObj.angleField);
+                geometry.color(configObj.colorField);
             }
         }
+        
         // 配置color
-        if (seriesField && color && Array.isArray(color)) {
-            geometry.color(seriesField, color);
-        } else if (seriesField) {
-            geometry.color(seriesField);
-        } else if (color && Array.isArray(color)) {
-            geometry.color(color[0]);
-        } else if (color) {
-            geometry.color(color);
+        if (configObj.seriesField && configObj.color) {
+            geometry.color(configObj.seriesField, configObj.color);
+        } else if (configObj.seriesField) {
+            geometry.color(configObj.seriesField);
+        } else if (configObj.color) {
+            geometry.color(configObj.color);
         }
-        // 堆叠
-        if (isStack && type === 'interval') {
+        
+        // 堆叠配置
+        if (configObj.isStack && configObj.type === 'interval') {
             geometry.adjust('stack');
         }
-        // 其他配置
-        if (title) {
+        
+        // 标题配置
+        if (configObj.title) {
             chart.annotation().text({
                 position: ['50%', '0%'],
-                content: title,
+                content: configObj.title,
                 style: {
                     fontSize: 18,
                     fontWeight: 'bold',
@@ -462,30 +329,44 @@ function initializeAntvChart(chartId, configObj, fallbackImgPath) {
                 offsetY: -20
             });
         }
-        // 渲染
+        
+        // 坐标轴配置
+        if (configObj.xTitle) {
+            chart.axis(configObj.xField, {
+                title: {
+                    text: configObj.xTitle
+                }
+            });
+        }
+        if (configObj.yTitle) {
+            chart.axis(configObj.yField, {
+                title: {
+                    text: configObj.yTitle
+                }
+            });
+        }
+        
+        // 渲染图表
         chart.render();
         
         // 存储图表实例以便后续引用
-        antvInstances[chartId] = chart;
+        chartInstances[chartId] = chart;
         
         // 标记为已初始化
         container.setAttribute('data-initialized', 'true');
         
         return chart;
     } catch (error) {
-        console.error(`Error creating AntV chart ${chartId}:`, error);
-        fallbackToImage(chartId);
+        console.error(`Error creating chart ${chartId}:`, error);
+        fallbackToImage(chartId, configObj.imgPath);
         return null;
     }
 }
 
 // 回退到静态图片
-function fallbackToImage(chartId) {
+function fallbackToImage(chartId, fallbackImgPath) {
     const container = document.getElementById(chartId);
-    if (!container) return;
-    
-    const fallbackImgPath = container.getAttribute('data-fallback-img');
-    if (!fallbackImgPath) return;
+    if (!container || !fallbackImgPath) return;
     
     console.log(`Falling back to image for ${chartId}: ${fallbackImgPath}`);
     
@@ -494,6 +375,8 @@ function fallbackToImage(chartId) {
     img.src = fallbackImgPath;
     img.alt = 'Chart fallback image';
     img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'contain';
     
     // 替换容器内容
     container.innerHTML = '';
@@ -507,18 +390,20 @@ document.addEventListener('DOMContentLoaded', function() {
     for i, config in enumerate(chart_configs):
         # 将Python字典转换为JSON字符串
         json_str = json.dumps(config['configContent'])
-        chart_script += f"    antvConfigs.chart_{i} = {json_str};\n"
+        chart_script += f"    const config_{i} = {json_str};\n"
+    
     # 然后为每个图表添加初始化代码
     for i, config in enumerate(chart_configs):
-        chart_script += f"    initializeAntvChart('{config['chartId']}', antvConfigs.chart_{i}, '{config['imgPath']}');\n"
+        chart_script += f"    initializeChart('{config['chartId']}', config_{i}, '{config['imgPath']}');\n"
+    
     chart_script += """
     // 添加一个定时器检查图表是否正确渲染
     setTimeout(function() {
         document.querySelectorAll('div[id^="antv_chart_"]').forEach(container => {
             const chartId = container.id;
             // 检查该图表是否已标记为初始化
-            if (!container.getAttribute('data-initialized') || !antvInstances[chartId]) {
-                console.log(`AntV chart ${chartId} was not initialized properly, falling back to image`);
+            if (!container.getAttribute('data-initialized') || !chartInstances[chartId]) {
+                console.log(`Chart ${chartId} was not initialized properly, falling back to image`);
                 fallbackToImage(chartId);
             }
         });
@@ -528,7 +413,7 @@ document.addEventListener('DOMContentLoaded', function() {
 """
     return chart_script
 
-def fill_template(sections, template_type="dashboard", use_antv=False):
+def fill_template(sections, template_type="dashboard"):
     from pathlib import Path
 
     def highlight_keywords(text):
@@ -547,17 +432,17 @@ def fill_template(sections, template_type="dashboard", use_antv=False):
     elif template_type == "magazine":
         return generate_magazine_template(sections)
     elif template_type == "dashboard":
-        return generate_dashboard_template(sections, use_antv)
+        return generate_dashboard_template(sections)
     else:
         # 默认使用dashboard模板
-        return generate_dashboard_template(sections, use_antv)
+        return generate_dashboard_template(sections)
 
 
 def generate_sidebar_template(sections):
     from html import escape
     
     # 处理图表配置
-    chart_configs, chart_id_counter = prepare_chartjs_config(sections)
+    chart_configs, chart_id_counter = prepare_antv_config(sections)
     
     # 生成导航链接
     nav_links = ""
@@ -590,9 +475,10 @@ def generate_sidebar_template(sections):
             
             if config:
                 chart_id = chart.get("chart_id", "")
+                is_antv = chart.get("is_antv", True)
                 
                 main_content += f'''      <div class="chart-container">
-        <canvas id="{chart_id}"></canvas>
+        <div id="{chart_id}"></div>
         <p class="caption">{escape(caption)}</p>
       </div>\n'''
             else:
@@ -610,8 +496,8 @@ def generate_sidebar_template(sections):
             
         main_content += '    </section>\n\n'
     
-    # 生成Chart.js脚本
-    chart_script = generate_chartjs_script(chart_configs)
+    # 生成AntV G2脚本
+    chart_script = generate_antv_script(chart_configs)
     
     # 组装HTML
     html = f'''<!DOCTYPE html>
@@ -620,7 +506,7 @@ def generate_sidebar_template(sections):
   <meta charset="UTF-8">
   <title>数据分析报告</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/@antv/g2@4.2.8/dist/g2.min.js"></script>
   <style>
     :root {{
       --primary-color: #4f46e5;
@@ -815,7 +701,7 @@ def generate_sidebar_template(sections):
       width: 100%;
     }}
     
-    .chart-container canvas {{
+    .chart-container div[id^="antv_chart_"] {{
       width: 100% !important;
       height: 100% !important;
     }}
@@ -972,7 +858,7 @@ def generate_grid_template(sections):
     import os.path
     
     # 处理图表配置
-    chart_configs, chart_id_counter = prepare_chartjs_config(sections)
+    chart_configs, chart_id_counter = prepare_antv_config(sections)
     
     # 生成图表卡片内容
     cards_html = ""
@@ -1025,7 +911,7 @@ def generate_grid_template(sections):
             cards_html += f'<div class="summary"><p><strong>Chapter Summary：</strong> {escape(summary)}</p></div>\n'
     
     # 生成Chart.js脚本
-    chart_script = generate_chartjs_script(chart_configs)
+    chart_script = generate_antv_script(chart_configs)
     
     # 组装HTML
     html = f'''<!DOCTYPE html>
@@ -1078,7 +964,7 @@ def generate_dark_template(sections):
     from html import escape
     
     # 处理图表配置
-    chart_configs, chart_id_counter = prepare_chartjs_config(sections)
+    chart_configs, chart_id_counter = prepare_antv_config(sections)
     
     def highlight_keywords_dark(text):
         if not text:
@@ -1232,7 +1118,7 @@ def generate_dark_template(sections):
             html_body += f"<div class='summary'><strong>Chapter Summary：</strong> {highlight_keywords_dark(summary)}</div>\n"
 
     # 生成Chart.js脚本
-    chart_script = generate_chartjs_script(chart_configs)
+    chart_script = generate_antv_script(chart_configs)
     
     html_tail = chart_script + "</body></html>"
 
@@ -1243,7 +1129,7 @@ def generate_magazine_template(sections):
     from html import escape
     
     # 处理图表配置
-    chart_configs, chart_id_counter = prepare_chartjs_config(sections)
+    chart_configs, chart_id_counter = prepare_antv_config(sections)
     
     # 添加高亮关键词的辅助函数
     def highlight_keywords(text):
@@ -1260,7 +1146,12 @@ def generate_magazine_template(sections):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>数据分析杂志</title>
         <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Source+Sans+Pro:wght@300;400;600&display=swap" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        '''
+    
+    # 添加AntV G2脚本
+    magazine_content += '<script src="https://unpkg.com/@antv/g2@4.2.8/dist/g2.min.js"></script>'
+    
+    magazine_content += '''
         <style>
             :root {
                 --accent-color: #e63946;
@@ -1496,9 +1387,10 @@ def generate_magazine_template(sections):
                 
                 if config:
                     chart_id = chart.get("chart_id", "")
-                    magazine_content += f'<div class="chart-container">\n'
-                    magazine_content += f'<canvas id="{chart_id}"></canvas>\n'
-                    magazine_content += f'</div>\n'
+                    is_antv = chart.get("is_antv", True)
+                    
+                    # AntV G2使用div容器
+                    magazine_content += f'<div class="chart-container" id="{chart_id}"></div>\n'
                 else:
                     # 获取相对路径
                     relative_img_path = convert_to_relative_path(img)
@@ -1543,9 +1435,10 @@ def generate_magazine_template(sections):
                 
                 if config:
                     chart_id = chart.get("chart_id", "")
-                    magazine_content += f'<div class="chart-container">\n'
-                    magazine_content += f'<canvas id="{chart_id}"></canvas>\n'
-                    magazine_content += f'</div>\n'
+                    is_antv = chart.get("is_antv", True)
+                    
+                    # AntV G2使用div容器
+                    magazine_content += f'<div class="chart-container" id="{chart_id}"></div>\n'
                 else:
                     # 获取相对路径
                     relative_img_path = convert_to_relative_path(img)
@@ -1596,9 +1489,10 @@ def generate_magazine_template(sections):
                 
                 if config:
                     chart_id = featured_chart.get("chart_id", "")
-                    magazine_content += f'<div class="chart-container">\n'
-                    magazine_content += f'<canvas id="{chart_id}"></canvas>\n'
-                    magazine_content += f'</div>\n'
+                    is_antv = featured_chart.get("is_antv", True)
+                    
+                    # AntV G2使用div容器
+                    magazine_content += f'<div class="chart-container" id="{chart_id}"></div>\n'
                 else:
                     # 获取相对路径
                     relative_img_path = convert_to_relative_path(img)
@@ -1619,9 +1513,10 @@ def generate_magazine_template(sections):
                         
                         if config:
                             chart_id = chart.get("chart_id", "")
-                            magazine_content += f'<div class="chart-container">\n'
-                            magazine_content += f'<canvas id="{chart_id}"></canvas>\n'
-                            magazine_content += f'</div>\n'
+                            is_antv = chart.get("is_antv", True)
+                            
+                            # AntV G2使用div容器
+                            magazine_content += f'<div class="chart-container" id="{chart_id}"></div>\n'
                         else:
                             # 获取相对路径
                             relative_img_path = convert_to_relative_path(img)
@@ -1633,8 +1528,9 @@ def generate_magazine_template(sections):
             
             magazine_content += '</article>'
     
-    # 添加Chart.js脚本
-    chart_script = generate_chartjs_script(chart_configs)
+    # 添加适当的图表脚本
+    chart_script = generate_antv_script(chart_configs)
+    
     magazine_content += chart_script
     
     magazine_content += '''
@@ -1645,19 +1541,15 @@ def generate_magazine_template(sections):
     return magazine_content
 
 
-def generate_dashboard_template(sections, use_antv=False):
+def generate_dashboard_template(sections):
     from html import escape
     
     # 处理图表配置
-    if use_antv:
         chart_configs, chart_id_counter = prepare_antv_config(sections)
-    else:
-        chart_configs, chart_id_counter = prepare_chartjs_config(sections)
     
     def highlight_keywords(text):
         if not text:
             return ""
-        # 这里可以添加关键词高亮逻辑
         return text
     
     # 生成仪表盘图表面板
@@ -1700,7 +1592,7 @@ def generate_dashboard_template(sections, use_antv=False):
                 caption = chart.get("caption", "")
                 img = chart.get("img", "")
                 config = chart.get("config", "")
-                is_antv = chart.get("is_antv", False)
+                is_antv = chart.get("is_antv", True)
                 
                 panels_html += f'''
                 <div class="chart-card">
@@ -1708,14 +1600,8 @@ def generate_dashboard_template(sections, use_antv=False):
                 
                 if config:
                     chart_id = chart.get("chart_id", "")
-                    if use_antv or is_antv:
                         # AntV G2使用div容器
                         panels_html += f'<div class="chart-wrapper" id="{chart_id}"></div>\n'
-                    else:
-                        # Chart.js使用canvas
-                        panels_html += f'<div class="chart-wrapper">\n'
-                        panels_html += f'<canvas id="{chart_id}"></canvas>\n'
-                        panels_html += f'</div>\n'
                 else:
                     # 获取相对路径
                     relative_img_path = convert_to_relative_path(img)
@@ -1744,10 +1630,7 @@ def generate_dashboard_template(sections, use_antv=False):
         '''
     
     # 生成图表脚本
-    if use_antv:
         chart_script = generate_antv_script(chart_configs)
-    else:
-        chart_script = generate_chartjs_script(chart_configs)
     
     # 构建完整的HTML
     html = f'''<!DOCTYPE html>
@@ -1755,9 +1638,9 @@ def generate_dashboard_template(sections, use_antv=False):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>数据分析仪表盘</title>
+    <title>数据分析仪表盘 {' (AntV G2)'}</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    {'' if use_antv else '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>'}
+    <script src="https://unpkg.com/@antv/g2@4.2.8/dist/g2.min.js"></script>
     <style>
         :root {{
             --bg-color: #f5f7fa;
@@ -1987,7 +1870,7 @@ def generate_dashboard_template(sections, use_antv=False):
 </head>
 <body>
     <div class="dashboard-header">
-        <h1 class="dashboard-title">数据分析仪表盘{' (AntV G2)' if use_antv else ' (Chart.js)'}</h1>
+        <h1 class="dashboard-title">数据分析仪表盘{' (AntV G2)'}</h1>
         <div class="dashboard-controls">
             <button class="dashboard-control">导出报告</button>
             <button class="dashboard-control">刷新数据</button>
@@ -2009,7 +1892,6 @@ if __name__ == '__main__':
     parser.add_argument('markdown_file', type=str, help='Path to the input Markdown file')
     parser.add_argument('--output', type=str, default='report_generated.html', help='Output HTML file name')
     parser.add_argument('--template', type=str, choices=['sidebar', 'grid', 'magazine', 'dashboard'], default='dashboard', help='Template style to use')
-    parser.add_argument('--use-antv', action='store_true', help='Use AntV G2 for chart rendering instead of Chart.js')
     args = parser.parse_args()
 
     # Get absolute path for the markdown file
@@ -2022,13 +1904,10 @@ if __name__ == '__main__':
         output_path = os.path.join(md_dir, output_path)
     
     sections = parse_markdown(md_path)
-    html = fill_template(sections, args.template, args.use_antv)
+    html = fill_template(sections, args.template)
     
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html)
     
     print(f"✅ Report generated: {output_path}")
-    if args.use_antv:
         print("  - Using AntV G2 for chart rendering")
-    else:
-        print("  - Using Chart.js for chart rendering")

@@ -610,6 +610,7 @@ class DataStorytellingMCTSSolver:
                 process_script,
                 '--all',
                 '--dir', output_dir
+                # 默认使用AntV G2，无需添加额外参数
             ], check=True, capture_output=True, text=True)
             
             # 将子进程输出写入日志

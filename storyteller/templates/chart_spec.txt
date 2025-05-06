@@ -1,0 +1,32 @@
+作为数据可视化专家，请为以下任务生成AntV G2图表规格说明。
+
+任务ID: {{TASK_ID}}
+任务描述: {{DESCRIPTION}}
+图表类型: {{CHART_TYPE}}
+
+数据集列名: {{COLUMNS}}
+数据样本(前5行):
+{{DATA_SAMPLE}}
+
+请根据任务描述和数据，生成详细的图表规格说明，包括:
+1. 图表类型(chartType): 如column, line, pie, scatter等
+2. X轴使用的数据字段(xField)
+3. Y轴使用的数据字段(yField)
+4. 分组字段(seriesField，如果需要)
+5. 是否堆叠(isStack，对柱状图)
+6. 需要的数据聚合操作(aggregation): sum, count, average, none
+7. 图表标题(title)
+8. 坐标轴标题(xTitle, yTitle)
+
+以JSON格式回答，不要有任何其他文字。格式如下:
+{{
+  "chartType": "column",
+  "xField": "字段名",
+  "yField": "字段名",
+  "seriesField": "字段名(可选)",
+  "isStack": true/false(可选),
+  "aggregation": "sum/count/average/none",
+  "title": "图表标题",
+  "xTitle": "X轴标题",
+  "yTitle": "Y轴标题"
+}}

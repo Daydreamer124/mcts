@@ -180,7 +180,7 @@ class ChartConfigExtractor:
                 print("所有JSON解析尝试都失败了")
             
         return None
-
+    
     def _fill_config_defaults(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """填充配置中缺失的默认值"""
         # 复制默认配置
@@ -217,7 +217,7 @@ class ChartConfigExtractor:
                 result["title"] = f"{y_field} by {x_field}"
         
         return result
-        
+    
     def _handle_special_chart_types(self, df_copy: pd.DataFrame, chart_type: str, x_field: str, y_field: str) -> Optional[Dict[str, Any]]:
         """处理特殊图表类型（boxplot、violin、histogram、scatter）"""
         try:
@@ -243,8 +243,8 @@ class ChartConfigExtractor:
                     "label": str(x_val),
                     "data": y_values
                 })
-                
-                return {
+            
+            return {
                 "type": chart_type,  # 添加图表类型
                 "labels": labels,
                 "datasets": datasets
@@ -254,7 +254,7 @@ class ChartConfigExtractor:
             print(f"处理{chart_type}数据时出错: {str(e)}")
             import traceback
             traceback.print_exc()
-        return None
+            return None
     
     def _handle_scatter_plot(self, df: pd.DataFrame, x_field: str, y_field: str) -> Dict[str, Any]:
         """处理散点图数据"""
@@ -336,9 +336,9 @@ class ChartConfigExtractor:
                 # 根据图表类型设置默认聚合方法
                 if chart_type in ["boxplot", "violin", "histogram", "scatter"]:
                     agg_method = "none"  # 这些类型不需要聚合
-            else:
+                else:
                     agg_method = "sum"   # 默认使用sum作为聚合方法
-        else:
+            else:
                 agg_method = str(agg_method_raw).lower()
             
             is_stacked = config.get("is_stacked", False)
@@ -350,8 +350,8 @@ class ChartConfigExtractor:
             if chart_type in ["boxplot", "violin", "histogram", "scatter"]:
                 result = self._handle_special_chart_types(df_copy, chart_type, x_field, y_field)
                 if result is not None:
-        return result
-
+                    return result
+            
             # 处理派生列 - 如果配置中包含derived_columns
             if "derived_columns" in config and isinstance(config["derived_columns"], list):
                 print("发现派生列定义，准备处理...")
@@ -385,7 +385,7 @@ class ChartConfigExtractor:
                                                           labels=labels, 
                                                           right=right)
                                 print(f"✅ 成功创建分箱列: {col_name}")
-    else:
+                            else:
                                 print(f"警告: 分箱操作缺少必要参数，跳过")
                         
                         elif derivation_type == "transform":
@@ -413,6 +413,8 @@ class ChartConfigExtractor:
                                     locals_dict = {"df": df_copy, "np": np}
                                     df_copy[col_name] = eval(expression, {"__builtins__": {}}, locals_dict)
                                     print(f"✅ 成功创建计算列: {col_name}")
+                                else:
+                                    print(f"警告: 计算表达式格式无效: {expression}")
                             else:
                                 print(f"警告: 计算派生列缺少表达式参数")
                         else:
@@ -486,7 +488,7 @@ class ChartConfigExtractor:
                 data = df[x_field].value_counts()
             
             # 直接返回G2格式数据
-                            return [
+            return [
                 {"category": str(category), "value": value}
                 for category, value in zip(data.index, data.values)
             ]
@@ -526,6 +528,14 @@ class ChartConfigExtractor:
                 try:
                     if agg_method == "count":
                         pivot_data = pd.crosstab(df_copy[x_field], df_copy[hue_field])
+                    else:
+                        pivot_data = pd.pivot_table(
+                            df_copy,
+                            index=x_field,
+                            columns=hue_field,
+                            values=y_field,
+                            aggfunc=agg_method or 'sum'
+                        )
                 except Exception as e:
                     print(f"数据透视表处理失败: {str(e)}")
                     # 使用更安全的方法
@@ -591,7 +601,7 @@ class ChartConfigExtractor:
                 elif agg_method in [None, "none"]:
                     print("不使用聚合方法，直接使用原始数据")
                     grouped = df_copy.groupby(x_field)[y_field].mean()
-            else:
+                else:
                     grouped = df_copy.groupby(x_field)[y_field].sum()
             
             if grouped is None:
@@ -700,38 +710,6 @@ class ChartConfigExtractor:
                     }
                 }
             })
-        elif chart_type == "boxplot":
-            # 为箱线图添加特定配置
-            g2_config.update({
-                "xField": x_field,
-                "yField": y_field,
-                "groupField": hue_field if hue_field else x_field,  # 如果没有hue_field，使用x_field作为分组
-                "boxStyle": {
-                    "stroke": "#545454",
-                    "fill": colors[0],
-                    "fillOpacity": 0.3
-                },
-                "outliersStyle": {
-                    "fill": "#f5222d",
-                    "fillOpacity": 0.5
-                },
-                "tooltip": {
-                    "showMarkers": False,
-                    "showTitle": False,
-                    "formatter": "(datum) => { return { name: '统计值', value: [" +
-                                "'最小值: ' + datum.min, " +
-                                "'第一四分位数: ' + datum.q1, " +
-                                "'中位数: ' + datum.median, " +
-                                "'第三四分位数: ' + datum.q3, " +
-                                "'最大值: ' + datum.max" +
-                                "].join('<br/>') }; }"
-                }
-            })
-            
-            # 如果提供了分组字段，添加颜色映射
-            if hue_field:
-                g2_config["colorField"] = hue_field
-                g2_config["color"] = colors
         else:
             # 非饼图通用配置
             g2_config.update({
@@ -740,10 +718,10 @@ class ChartConfigExtractor:
             })
             
             # 添加分组字段
-        if hue_field:
+            if hue_field:
                 g2_config["seriesField"] = hue_field
                 g2_config["color"] = colors
-        else:
+            else:
                 g2_config["color"] = colors[0]
             
             # 堆叠配置
@@ -775,12 +753,11 @@ class ChartConfigExtractor:
         }
         
         # 添加工具提示配置
-        if "tooltip" not in g2_config:  # 确保不覆盖特定图表类型的配置
-            g2_config["tooltip"] = {
-                "showMarkers": True,
-                "showCrosshairs": chart_type == "line",
-                "shared": True
-            }
+        g2_config["tooltip"] = {
+            "showMarkers": True,
+            "showCrosshairs": chart_type == "line",
+            "shared": True
+        }
         
         # 添加交互配置
         g2_config["interactions"] = [

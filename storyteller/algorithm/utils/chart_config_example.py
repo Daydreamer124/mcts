@@ -1,7 +1,7 @@
 """
 ChartConfigExtractor示例程序
 
-这个脚本展示如何使用ChartConfigExtractor从可视化代码中提取图表配置信息。
+这个脚本展示如何使用ChartConfigExtractor从可视化代码中提取图表配置信息，并转换为AntV G2配置。
 """
 
 import os
@@ -21,10 +21,10 @@ if project_root not in sys.path:
 
 # 导入ChartConfigExtractor
 try:
-    from storyteller.algorithm.utils.chart_config_extractor import ChartConfigExtractor, convert_to_chartjs_config, convert_to_antv_config
+    from storyteller.algorithm.utils.chart_config_extractor import ChartConfigExtractor
 except ImportError:
     # 如果无法从包中导入，尝试直接导入
-    from chart_config_extractor import ChartConfigExtractor, convert_to_chartjs_config, convert_to_antv_config
+    from chart_config_extractor import ChartConfigExtractor
 
 # 创建示例数据
 def create_sample_data():
@@ -94,22 +94,15 @@ chart = plot(data)
         print("\n添加模拟的Review_Rating列用于测试")
         df['Review_Rating'] = np.random.randint(1, 6, len(df))
     
-    # 直接测试数据处理，不依赖derived_columns是否存在
+    # 处理数据
     print("\n2. 使用提取的配置处理数据...")
-    chart_data = extractor.extract_chart_data(df, config)
+    chart_data = extractor.resolve_chart_data(df, config)
     
-    print("\n处理后的Chart.js数据:")
+    print("\n处理后的数据:")
     print(json.dumps(chart_data, indent=2, ensure_ascii=False))
     
-    # 转换为Chart.js配置
-    print("\n3. 转换为Chart.js配置...")
-    chartjs_config = extractor.convert_to_chartjs_config(config, chart_data)
-    
-    print("\nChart.js配置:")
-    print(json.dumps(chartjs_config, indent=2, ensure_ascii=False))
-    
     # 转换为AntV配置
-    print("\n4. 转换为AntV配置...")
+    print("\n3. 转换为AntV配置...")
     antv_config = extractor.convert_to_antv_config(config, chart_data)
     
     print("\nAntV配置:")
@@ -146,22 +139,15 @@ chart = plot(data)
     print("\n提取的配置:")
     print(json.dumps(config, indent=2, ensure_ascii=False))
     
-    # 测试数据处理
+    # 处理数据
     print("\n2. 使用提取的配置处理数据...")
-    chart_data = extractor.extract_chart_data(df, config)
+    chart_data = extractor.resolve_chart_data(df, config)
     
-    print("\n处理后的Chart.js数据:")
+    print("\n处理后的数据:")
     print(json.dumps(chart_data, indent=2, ensure_ascii=False))
     
-    # 转换为Chart.js配置
-    print("\n3. 转换为Chart.js配置...")
-    chartjs_config = extractor.convert_to_chartjs_config(config, chart_data)
-    
-    print("\nChart.js配置:")
-    print(json.dumps(chartjs_config, indent=2, ensure_ascii=False))
-    
     # 转换为AntV配置
-    print("\n4. 转换为AntV配置...")
+    print("\n3. 转换为AntV配置...")
     antv_config = extractor.convert_to_antv_config(config, chart_data)
     
     print("\nAntV配置:")

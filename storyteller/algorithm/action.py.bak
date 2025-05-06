@@ -21,8 +21,6 @@ from storyteller.algorithm.utils.universalsc import run_universal_self_consisten
 from storyteller.algorithm.utils.unified_framework import unified_generation_framework  # 导入统一框架
 import time
 from tqdm import tqdm
-import glob
-from storyteller.algorithm.utils.chart_config_extractor import ChartConfigExtractor
 
 
 
@@ -650,7 +648,7 @@ class Tasks2Charts(DataStorytellingAction):
         try:
             from storyteller.algorithm.utils.ChartSimilarity import ChartSimilarity
             self.similarity_tool = ChartSimilarity()
-            self.similarity_threshold = 0.90  # 相似度阈值
+            self.similarity_threshold = 0.90
             self.use_similarity_check = self.similarity_tool.initialized
             print("✅ 图表相似度检测工具初始化成功")
         except Exception as e:
@@ -664,24 +662,17 @@ class Tasks2Charts(DataStorytellingAction):
         child_node.depth = node.depth + 1
 
         try:
-            # 递增迭代号 - 确保每次创建新节点时迭代号加1
-            #child_node.report.current_iteration += 1
+            # 递增迭代号
             current_iteration = child_node.report.current_iteration
             print(f"✅ 当前迭代号: {current_iteration}")
             
-            # 确定当前迭代号和保存路径
+            # 创建输出目录结构
             iteration_dir = os.path.join("storyteller", "output", "iterations", f"iteration_{current_iteration}")
             os.makedirs(iteration_dir, exist_ok=True)
             charts_dir = os.path.join(iteration_dir, "charts")
             os.makedirs(charts_dir, exist_ok=True)
-           
-            # 创建一个额外的 JSON 配置目录
             json_dir = os.path.join(iteration_dir, "chart_configs")
             os.makedirs(json_dir, exist_ok=True)
-            
-            # 创建一个专门存放Python代码的目录
-            code_dir = os.path.join(iteration_dir, "chart_code")
-            os.makedirs(code_dir, exist_ok=True)
              
             # 获取数据集
             dataset_path = node.report.dataset_path
@@ -714,398 +705,426 @@ class Tasks2Charts(DataStorytellingAction):
                     description = task.get('task_description')
                     chart_type = task.get('chart_type', ["Bar Chart"])[0]
 
-                    # 使用任务ID作为文件名，如果为空则使用任务描述
+                    # 文件命名处理
                     file_name = task_id if task_id else description
                     if not file_name:
                         file_name = f"chart_{chapter_idx}_{len(chapter.charts)}"
-                    # 清理文件名中的非法字符
                     file_name = re.sub(r'[<>:"/\\|?*]', '_', file_name)
                     chart_path = os.path.join(charts_dir, f"{file_name}.png")
 
+                    # 步骤1: 使用LLM生成ChartSpec
+                    chart_spec = self._generate_chart_spec(task_id, description, chart_type, df, llm_kwargs)
                     
-                    from lida.datamodel import Goal, Summary
-                    from lida.components.manager import Manager
-                    # 创建 Goal 对象 - 使用 description 替代 task_name
-                    #goal = Goal(question=task_id, visualization=chart_type, rationale=description) !!原先是这个
-                    goal = Goal(question=task_id, visualization=description, rationale=description)
-                    # 创建 Summary 对象
-                    # 读取数据摘要 JSON 文件
-                    data_summary = {}
-                    json_path = os.path.join("storyteller", "dataset", "data_context.json")
-                    print(f"尝试读取数据摘要 JSON: {json_path}")
+                    # 检查是否返回了错误对象
+                    if chart_spec.get("error", False):
+                        print(f"❌ 生成ChartSpec失败: {chart_spec.get('error_message', '未知错误')}")
+                        # 标记任务为失败
+                        for vis_task in chapter.visualization_tasks:
+                            if vis_task.get('task_id') == task_id:
+                                vis_task['visualization_success'] = False
+                                vis_task['error_message'] = chart_spec.get('error_message', '未知错误')
+                                print(f"⚠️ 任务 '{task_id}' 已标记为失败")
+                                break
+                        # 跳过当前任务，继续处理下一个
+                        continue
                     
-                    try:
-                        with open(json_path, 'r', encoding='utf-8') as f:
-                            data_summary = json.load(f)
-                        print("✓ 成功读取数据摘要 JSON")
-                    except Exception as e:
-                        print(f"✗ 读取数据摘要 JSON 失败: {str(e)}")
-                        # 如果无法读取 JSON 文件，使用默认值
-                        data_summary = {
-                            "name": node.report.original_query,
-                            "dataset_description": node.report.data_context,
-                            "fields_info": {col: {"dtype": str(dtype)} for col, dtype in zip(df.columns, df.dtypes)}
-                        }
-
-                    # 创建 Summary 对象，使用从 JSON 文件中提取的信息
-                    summary = Summary(
-                        name=data_summary.get("name", "购物数据分析"),
-                        file_name=dataset_path,
-                        dataset_description=str(data_summary.get("dataset_description", "购物数据集")),
-                        field_names=list(data_summary.get("fields_info", {}).keys()) if "fields_info" in data_summary else df.columns.tolist(),
-                        fields=[info.get("dtype", "unknown") for info in data_summary.get("fields_info", {}).values()] if "fields_info" in data_summary else [str(dtype) for dtype in df.dtypes.tolist()]
-                    )
+                    # 如果没有错误，继续处理后续步骤
+                    # 步骤2: 根据ChartSpec处理数据
+                    processed_data = self._process_data_for_chart(chart_spec, df)
                     
-                    # 创建自定义的文本生成器
-                    #text_gen = llm(provider="openai", model="gpt-4-32k")
-                    text_gen = llm(
-                        provider="openai", 
-                        model="gpt-4-32k"
-                    )
-
-                    # 创建 LIDA 管理器
-                    manager = Manager(text_gen=text_gen)
-
-                    # 生成可视化
-                    print(f"正在为任务 '{description}' 生成可视化图表...")
-                    visualization = manager.visualize(summary, goal, library="matplotlib")
-
-                    # 处理可视化结果
-                    if isinstance(visualization, list) and len(visualization) > 0:
-                        visualization = visualization[0]
-
-                    if hasattr(visualization, 'status') and visualization.status:
-                        print("✓ 成功生成可视化结果")
-
-                        # 保存可视化代码到Python文件
-                        if hasattr(visualization, 'code'):
-                            # 创建代码文件路径
-                            py_file_path = os.path.join(code_dir, f"{file_name}.py")
-                            try:
-                                with open(py_file_path, 'w', encoding='utf-8') as f:
-                                    # 添加任务信息作为注释
-                                    f.write(f"'''\n")
-                                    f.write(f"任务ID: {task_id}\n")
-                                    f.write(f"任务描述: {description}\n")
-                                    f.write(f"图表类型: {chart_type}\n")
-                                    f.write(f"'''\n\n")
-                                    # 写入代码
-                                    f.write(visualization.code)
-                                print(f"✅ 可视化Python代码已保存到: {py_file_path}")
-                                
-                                # 在任务对象中添加代码路径信息
-                                task['code_path'] = py_file_path
-                            except Exception as e:
-                                print(f"⚠️ 保存可视化Python代码时出错: {str(e)}")
-
-                        # 保存图表
-                        if hasattr(visualization, 'savefig'):
-                            visualization.savefig(chart_path)
-                            print(f"✓ 图表已保存到: {chart_path}")
+                    # 步骤3: 生成G2配置
+                    g2_config = self._generate_g2_config(chart_spec, processed_data)
+                    
+                    # 步骤4: 使用G2渲染图表
+                    success, chart_path = self._render_g2_chart(g2_config, chart_path)
+                    
+                    # 处理成功渲染的图表
+                    if success:
+                        # 保存配置文件
+                        json_path = os.path.join(json_dir, f"{file_name}.json")
+                        with open(json_path, "w", encoding="utf-8") as f:
+                            json.dump(g2_config, f, ensure_ascii=False, indent=2)
+                        
+                        # 图表相似度检查
+                        skip_due_to_similarity = False
+                        if self.use_similarity_check and all_charts:
+                            # 收集已有图表的路径列表
+                            existing_chart_paths = []
+                            for chart in all_charts:
+                                if hasattr(chart, 'url') and chart.url:
+                                    existing_chart_paths.append(chart.url)
                             
-                            # 额外生成 Chart.js 配置 JSON 文件
-                            try:
-                                # 提取图表使用的实际数据
-                                # chart_data = self._extract_actual_data(visualization)
-                                chart_config = self._extract_chart_config(visualization, task_id, description, df)
+                            if existing_chart_paths:
+                                # 使用batch_compare计算相似度
+                                is_too_similar, max_similarity, similar_chart_path, _ = self.similarity_tool.batch_compare(
+                                    chart_path, existing_chart_paths, self.similarity_threshold
+                                )
                                 
-                                # 将提取的实际数据添加到配置中
-                                #if chart_data:
-                                #    chart_config['data'] = chart_data
-                                #    print(f"✓ 成功提取图表实际数据")
-                                
-                                # 获取 JSON 配置目录
-                                json_dir = os.path.join(os.path.dirname(charts_dir), "chart_configs")
-                                os.makedirs(json_dir, exist_ok=True)
-                                
-                                # 保存 JSON 配置
-                                json_file_name = f"{file_name}.json"
-                                json_path = os.path.join(json_dir, json_file_name)
-                                with open(json_path, "w", encoding="utf-8") as f:
-                                    json.dump(chart_config, f, ensure_ascii=False, indent=2)
-                                print(f"✓ 图表配置 JSON 已保存到: {json_path}")
-                                
-                                # 保存原始Python代码和JSON配置的关联信息
-                                if hasattr(visualization, 'code'):
-                                    relation_file = os.path.join(json_dir, f"{file_name}.relation.txt")
-                                    try:
-                                        with open(relation_file, 'w', encoding='utf-8') as f:
-                                            f.write(f"Python代码: {os.path.join(code_dir, f'{file_name}.py')}\n")
-                                            f.write(f"JSON配置: {json_path}\n")
-                                            f.write(f"图表路径: {chart_path}\n")
-                                            f.write(f"图表类型: {chart_type}\n")
-                                            f.write(f"任务ID: {task_id}\n")
-                                            f.write(f"任务描述: {description}\n")
-                                        print(f"✓ 代码和配置关联信息已保存到: {relation_file}")
-                                    except Exception as e:
-                                        print(f"⚠️ 保存关联信息时出错: {str(e)}")
-                            except Exception as e:
-                                print(f"⚠️ 保存图表配置 JSON 时出错: {str(e)}")
-                                traceback.print_exc()
-                                json_path = None
-                                
-                            # 额外保存图表数据为CSV，以便后续分析
-                            try:
-                                csv_dir = os.path.join(os.path.dirname(charts_dir), "chart_data")
-                                os.makedirs(csv_dir, exist_ok=True)
-                                csv_file_name = f"{file_name}.csv"
-                                csv_path = os.path.join(csv_dir, csv_file_name)
-                                
-                                # 尝试从可视化对象中提取实际使用的数据
-                                if hasattr(visualization, '_data') and isinstance(visualization._data, pd.DataFrame):
-                                    visualization._data.to_csv(csv_path, index=False)
-                                    print(f"✓ 图表数据已保存到: {csv_path}")
-                                elif hasattr(visualization, 'data') and isinstance(visualization.data, pd.DataFrame):
-                                    visualization.data.to_csv(csv_path, index=False)
-                                    print(f"✓ 图表数据已保存到: {csv_path}")
-                                # else:
-                                    # 尝试从代码中提取和分析数据
-                                    #last_df_var = self._find_last_dataframe_variable(visualization.code)
-                                    #if last_df_var:
-                                        # 这里我们无法直接访问代码中的变量
-                                        # 所以只能保存一个指示文件，提示chart_config使用什么变量
-                                        #with open(csv_path + ".info", "w") as f:
-                                        #    f.write(f"Last DataFrame variable: {last_df_var}")
-                                        #print(f"✓ 图表数据变量信息已保存: {last_df_var}")
-                            except Exception as e:
-                                print(f"⚠️ 保存图表数据 CSV 时出错: {str(e)}")
-                                traceback.print_exc()
-                            
-                            # 检查图表相似度
-                            if self.use_similarity_check and all_charts:
-                                # 收集已有图表的路径列表
-                                existing_chart_paths = []
-                                for chart in all_charts:
-                                    if hasattr(chart, 'url') and chart.url:
-                                        existing_chart_paths.append(chart.url)
-                                
-                                if existing_chart_paths:
-                                    # 使用batch_compare计算相似度
-                                    is_too_similar, max_similarity, similar_chart_path, all_similarities = self.similarity_tool.batch_compare(
-                                        chart_path, existing_chart_paths, self.similarity_threshold
-                                    )
+                                if is_too_similar:
+                                    # 处理相似图表
+                                    # 找到最相似的图表对象
+                                    similar_chart = None
+                                    for chart in all_charts:
+                                        if hasattr(chart, 'url') and chart.url == similar_chart_path:
+                                            similar_chart = chart
+                                            break
                                     
-                                    if is_too_similar:
-                                        # 找到最相似的图表对象
-                                        similar_chart = None
-                                        for chart in all_charts:
-                                            if hasattr(chart, 'url') and chart.url == similar_chart_path:
-                                                similar_chart = chart
+                                    similar_task_id = getattr(similar_chart, 'task_id', '未知任务') if similar_chart else '未知任务'
+                                    
+                                    print(f"⚠️ 警告: 生成的图表与现有图表相似度过高 ({max_similarity:.4f})")
+                                    print(f"   - 相似图表: {similar_task_id}")
+                                    
+                                    # 创建samechart文件夹
+                                    samechart_dir = os.path.join(charts_dir, "samechart")
+                                    os.makedirs(samechart_dir, exist_ok=True)
+                                    
+                                    # 移动相似的图表到samechart文件夹
+                                    samechart_path = os.path.join(samechart_dir, f"{file_name}.png")
+                                    
+                                    try:
+                                        import shutil
+                                        # 移动图表到samechart目录
+                                        shutil.move(chart_path, samechart_path)
+                                        print(f"✓ 相似图表已移动到: {samechart_path}")
+                                        
+                                        # 标记任务为已完成但图表被跳过
+                                        for vis_task in chapter.visualization_tasks:
+                                            if vis_task.get('task_id') == task_id:
+                                                vis_task['visualization_success'] = False
+                                                vis_task['skipped_due_to_similarity'] = True
+                                                print(f"⚠️ 任务 '{task_id}' 因图表相似度过高而被跳过")
                                                 break
                                         
-                                        similar_task_id = getattr(similar_chart, 'task_id', '未知任务') if similar_chart else '未知任务'
-                                        
-                                        print(f"⚠️ 警告: 生成的图表与现有图表相似度过高 ({max_similarity:.4f})")
-                                        print(f"   - 相似图表: {similar_task_id}")
-                                        
-                                        # 创建samechart文件夹
-                                        samechart_dir = os.path.join(charts_dir, "samechart")
-                                        os.makedirs(samechart_dir, exist_ok=True)
-                                        
-                                        # 移动相似的图表到samechart文件夹
-                                        samechart_path = os.path.join(samechart_dir, f"{file_name}.png")
-                                        
-                                        try:
-                                            import shutil
-                                            # 移动图表到samechart目录(而非复制)
-                                            shutil.move(chart_path, samechart_path)
-                                            print(f"✓ 相似图表已移动到: {samechart_path}")
-                                            
-                                            # 在控制台输出相似度信息
-                                            print(f"📊 图表相似度信息:")
-                                            print(f"   - 相似度值: {max_similarity:.4f}")
-                                            print(f"   - 相似图表任务: {similar_task_id}")
-                                            print(f"   - 当前任务: {task_id}")
-                                            
-                                            # 标记任务为已完成但图表被跳过
-                                            for vis_task in chapter.visualization_tasks:
-                                                if vis_task.get('task_id') == task_id:
-                                                    vis_task['visualization_success'] = False
-                                                    vis_task['skipped_due_to_similarity'] = True
-                                                    print(f"⚠️ 任务 '{task_id}' 因图表相似度过高而被跳过")
-                                                    break
-                                                    
-                                            # 跳过当前任务的后续处理
-                                            continue
-                                            
-                                        except Exception as e:
-                                            print(f"⚠️ 移动相似图表时出错: {str(e)}")
-                                            # 如果移动失败，继续使用原始路径
-
-                        # 创建图表对象
-                        print(f"\n📊 创建图表对象:")
-                        print(f"- 图表路径: {chart_path}")
-                        print(f"- 图表类型: {chart_type}")
-                        print(f"- 任务ID: {task_id}")
-                        
-                        chart = Chart(
-                            url=chart_path,
-                            caption="",  # 使用空字符串作为初始说明
-                            chart_type=chart_type,
-                            task_id=task_id  # task_id 实际上就是任务描述
-                        )
-                        
-                        # 存储可视化代码，以便后续修改
-                        if hasattr(visualization, 'code'):
-                            chart.code = visualization.code
-                            # 添加代码路径信息
-                            chart.code_path = os.path.join(code_dir, f"{file_name}.py")
-                        
-                        # 添加图表到章节
-                        if not hasattr(chapter, 'charts'):
-                            chapter.charts = []
-                            print("初始化章节的图表列表")
-                        
-                        chapter.charts.append(chart)
-                        # 更新所有图表列表
-                        all_charts.append(chart)
-                        print(f"✓ 图表已添加到章节，当前章节图表数量: {len(chapter.charts)}")
-                        
-                        # 如果处理成功，也标记为已完成
-                        for vis_task in chapter.visualization_tasks:
-                            if vis_task.get('task_id') == task_id:
-                                vis_task['visualization_success'] = True
-                                vis_task['code_path'] = os.path.join(code_dir, f"{file_name}.py") if hasattr(visualization, 'code') else None
-                                print(f"✅ 任务 '{task_id}' 已成功完成")
-                                break
+                                        skip_due_to_similarity = True
+                                    except Exception as e:
+                                        print(f"⚠️ 移动相似图表时出错: {str(e)}")
+                    
                     else:
                         print("✗ 生成可视化图表失败")
-                        # 即使失败也标记为完成，避免无限循环
+                        # 标记任务为失败
                         for vis_task in chapter.visualization_tasks:
                             if vis_task.get('task_id') == task_id:
-                                # 确保初始化 visualization_success 字段
                                 vis_task['visualization_success'] = False
-                                
-                                # 新增：保存失败图表的代码（如果有）
-                                if hasattr(visualization, 'code'):
-                                    # 创建失败图表目录（如果不存在）
-                                    failed_code_dir = os.path.join(code_dir, "failed")
-                                    os.makedirs(failed_code_dir, exist_ok=True)
-                                    
-                                    # 保存失败图表代码到文件
-                                    code_file_path = os.path.join(failed_code_dir, f"{file_name}_failed.py")
-                                    try:
-                                        with open(code_file_path, 'w', encoding='utf-8') as f:
-                                            # 添加任务信息作为注释
-                                            f.write(f"'''\n")
-                                            f.write(f"任务ID: {task_id}\n")
-                                            f.write(f"任务描述: {description}\n")
-                                            f.write(f"图表类型: {chart_type}\n")
-                                            f.write(f"状态: 失败\n")
-                                            f.write(f"'''\n\n")
-                                            # 写入代码
-                                            f.write(visualization.code)
-                                        print(f"✅ 已保存失败图表代码到: {code_file_path}")
-                                        
-                                        # 在任务中记录代码路径
-                                        vis_task['failed_code_path'] = code_file_path
-                                    except Exception as e:
-                                        print(f"❌ 保存失败图表代码时出错: {str(e)}")
-                                
-                                print(f"⚠️ 任务 '{description}' 虽然失败但已标记为已完成，避免无限循环")
+                                print(f"⚠️ 任务 '{task_id}' 已标记为失败")
                                 break
-            # 设置正确的状态
+            
+            # 设置节点状态
             child_node.node_type = ReportGenerationState.a3
             return [child_node]
 
         except Exception as e:
             print(f"❌ 处理节点时出错: {str(e)}")
             traceback.print_exc()
-            # 确保即使异常也设置正确的状态
             child_node.node_type = ReportGenerationState.a3
             return [child_node]
 
-
-    def _extract_chart_config(self, visualization, task_id, description, df):
-        """从可视化代码中提取图表配置
-        
-        参数:
-            visualization: 包含可视化代码的字典
-            task_id: 任务ID
-            description: 任务描述
-            df: 数据DataFrame
-            
-        返回:
-            图表配置字典
-        """
-        chart_config = {}
-        
+    def _generate_chart_spec(self, task_id, description, chart_type, df, llm_kwargs=None):
+        """使用LLM生成图表规格说明"""
         try:
-            # 确保有可视化代码
-            if not hasattr(visualization, 'code'):
-                raise ValueError("可视化对象没有代码属性")
+            print(f"📝 正在为任务 '{task_id}' 生成ChartSpec...")
             
-            code = visualization.code
-            print("\n📋 分析可视化代码:")
-            print("-" * 50)
-            print(code)
-            print("-" * 50)
+            # 准备提示词模板参数
+            prompt_args = {
+                "TASK_ID": task_id,
+                "DESCRIPTION": description,
+                "CHART_TYPE": chart_type,
+                "COLUMNS": df.columns.tolist(),
+                "DATA_SAMPLE": df.head(5).to_string()
+            }
             
-            # 打印DataFrame信息，帮助理解数据结构
-            print("\n📊 DataFrame信息:")
-            print(f"形状: {df.shape}")
-            print(f"列名: {df.columns.tolist()}")
-            print(f"数据类型:\n{df.dtypes}")
-            print("\n前5行数据:")
-            print(df.head(5).to_string())
-            print("-" * 50)
+            # 使用get_prompt函数获取模板并传入参数
+            prompt = get_prompt("chart_spec", prompt_args)
             
-            # 获取数据上下文信息
-            data_context = None
-            try:
-                # 尝试读取数据摘要JSON文件
-                json_path = os.path.join("storyteller", "dataset", "data_context.json")
-                if os.path.exists(json_path):
-                    with open(json_path, 'r', encoding='utf-8') as f:
-                        data_summary = json.load(f)
-                        data_context = data_summary.get("dataset_description", "")
-                        print(f"✅ 从JSON文件读取到数据上下文: {data_context[:100]}...")
-            except Exception as e:
-                print(f"⚠️ 读取数据上下文时出错: {str(e)}")
+            # 确保llm_kwargs是一个字典
+            if llm_kwargs is None:
+                llm_kwargs = {}
             
-            # 创建提取器并解析代码
-            extractor = ChartConfigExtractor()
-            config = extractor.extract_from_code(code)
+            # 调用LLM获取ChartSpec
+            responses = call_openai(prompt, **llm_kwargs)
             
-            # 如果解析失败，返回空配置
-            if not config:
-                print(f"⚠️ LLM解析失败")
-                return {}
+            if not responses:
+                print("⚠️ 没有收到有效响应")
+                raise ValueError("LLM没有返回有效响应")
+                
+            response_text = responses[0]
             
-            # 提取配置并处理数据
+            # 解析JSON
+            import re
+            json_match = re.search(r'```json\s*([\s\S]*?)\s*```|(\{[\s\S]*\})', response_text)
+            if json_match:
+                json_str = json_match.group(1) or json_match.group(2)
                 try:
-                chart_data = extractor.resolve_chart_data(df, config)
-                print(f"✓ 使用resolve_chart_data方法生成图表数据")
-                except Exception as e:
-                    print(f"⚠️ 使用resolve_chart_data方法时出错: {e}")
-                    chart_data = None
+                    chart_spec = json.loads(json_str)
+                    print(f"✅ 成功生成ChartSpec")
+                    
+                    # 确保chart_spec包含必要的字段
+                    required_fields = ["chartType", "xField", "yField"]
+                    missing_fields = [field for field in required_fields if field not in chart_spec]
+                    
+                    if missing_fields:
+                        print(f"⚠️ ChartSpec缺少必要字段: {missing_fields}")
+                        raise ValueError(f"ChartSpec缺少必要字段: {missing_fields}")
+                    
+                    return chart_spec
+                except json.JSONDecodeError as e:
+                    print(f"⚠️ JSON解析错误: {str(e)}")
+                    raise ValueError(f"无法解析返回的JSON: {str(e)}")
+            else:
+                print("⚠️ 无法从LLM响应中提取JSON")
+                raise ValueError("无法从LLM响应中提取JSON格式数据")
+                
+        except Exception as e:
+            print(f"⚠️ 生成ChartSpec时出错: {str(e)}")
+            traceback.print_exc()
             
-            # 转换为AntV G2配置
-            chart_config = extractor.convert_to_antv_config(config, chart_data)
+            # 返回一个错误对象，而不是使用回退逻辑
+            error_spec = {
+                "error": True,
+                "error_message": str(e),
+                "task_id": task_id,
+                "description": description
+            }
+            return error_spec
+
+    def _process_data_for_chart(self, chart_spec, df):
+        """根据ChartSpec处理数据"""
+        try:
+            print(f"🔄 根据ChartSpec处理数据...")
             
-            # 设置标题
-            if not chart_config.get("title") or chart_config["title"] == "Chart":
-                chart_config["title"] = description
+            # 提取关键字段
+            chart_type = chart_spec.get("chartType", "column")
+            x_field = chart_spec.get("xField")
+            y_field = chart_spec.get("yField")
+            series_field = chart_spec.get("seriesField")
+            aggregation = chart_spec.get("aggregation", "none")
             
-            # 输出配置信息
-                print(f"\n✓ 成功生成AntV G2配置:")
-            print(f"- 图表类型: {chart_config.get('type', '')}")
-            print(f"- 图表标题: {chart_config.get('title', '')}")
-            print(f"- X轴字段: {chart_config.get('xField', '')}")
-            print(f"- Y轴字段: {chart_config.get('yField', '')}")
-            if 'data' in chart_config:
-                print(f"- 数据点数量: {len(chart_config['data'])}")
-                series_field = chart_config.get('seriesField', None)
+            # 检查字段是否存在于数据集中
+            if x_field not in df.columns:
+                print(f"⚠️ 指定的X轴字段 '{x_field}' 不存在于数据集中")
+                x_field = df.columns[0]
+                chart_spec["xField"] = x_field
+                
+            if y_field not in df.columns:
+                print(f"⚠️ 指定的Y轴字段 '{y_field}' 不存在于数据集中")
+                # 使用第一个数值型字段作为Y轴
+                numeric_cols = df.select_dtypes(include=["number"]).columns
+                y_field = numeric_cols[0] if len(numeric_cols) > 0 else df.columns[1] if len(df.columns) > 1 else df.columns[0]
+                chart_spec["yField"] = y_field
+                
+            if series_field and series_field not in df.columns:
+                print(f"⚠️ 指定的分组字段 '{series_field}' 不存在于数据集中")
+                series_field = None
+                chart_spec.pop("seriesField", None)
+            
+            # 处理数据
+            result_df = df
+            
+            # 根据聚合方式处理数据
+            if aggregation == "sum":
+                # 求和聚合
                 if series_field:
-                    print(f"- 分组字段: {series_field}")
-                    print(f"- 是否堆叠: {'是' if chart_config.get('isStack', False) else '否'}")
+                    # 按X轴和分组字段分组，对Y轴值求和
+                    result_df = df.groupby([x_field, series_field])[y_field].sum().reset_index()
+                else:
+                    # 只按X轴分组，对Y轴值求和
+                    result_df = df.groupby(x_field)[y_field].sum().reset_index()
+            elif aggregation == "average" or aggregation == "mean":
+                # 平均值聚合
+                if series_field:
+                    # 按X轴和分组字段分组，对Y轴值求平均
+                    result_df = df.groupby([x_field, series_field])[y_field].mean().reset_index()
+                else:
+                    # 只按X轴分组，对Y轴值求平均
+                    result_df = df.groupby(x_field)[y_field].mean().reset_index()
+            elif aggregation == "count":
+                # 计数聚合
+                if series_field:
+                    # 按X轴和分组字段分组，计数
+                    result_df = df.groupby([x_field, series_field]).size().reset_index(name=y_field)
+                else:
+                    # 只按X轴分组，计数
+                    result_df = df.groupby(x_field).size().reset_index(name=y_field)
+            
+            # 将处理后的数据转换为列表
+            processed_data = result_df.to_dict('records')
+            
+            print(f"✅ 数据处理完成，生成 {len(processed_data)} 条数据记录")
+            return processed_data
             
         except Exception as e:
-            print(f"⚠️ 提取图表配置时出错: {str(e)}")
-            import traceback
+            print(f"⚠️ 处理数据时出错: {str(e)}")
             traceback.print_exc()
+            # 返回原始数据
+            return df.to_dict('records')
+
+    def _generate_g2_config(self, chart_spec, processed_data):
+        """生成AntV G2配置"""
+        try:
+            print(f"📊 生成G2配置...")
+            
+            # 提取字段
+            chart_type = chart_spec.get("chartType", "column").lower().replace("bar_chart", "column").replace("bar chart", "column")
+            x_field = chart_spec.get("xField")
+            y_field = chart_spec.get("yField")
+            series_field = chart_spec.get("seriesField")
+            title = chart_spec.get("title", "Chart")
+            is_stack = chart_spec.get("isStack", False)
+            x_title = chart_spec.get("xTitle", x_field)
+            y_title = chart_spec.get("yTitle", y_field)
+            
+            # 检查图表类型并映射到G2类型
+            g2_type = self._map_to_g2_chart_type(chart_type)
+            
+            # 构建基本G2配置
+            g2_config = {
+                "data": processed_data,
+                "type": g2_type,
+                "title": {
+                    "visible": True,
+                    "text": title
+                }
+            }
+            
+            # 根据图表类型添加特定配置
+            if g2_type in ["column", "bar", "line", "area", "scatter"]:
+                g2_config["xField"] = x_field
+                g2_config["yField"] = y_field
+                
+                # 分组配置
+                if series_field:
+                    g2_config["seriesField"] = series_field
+                    g2_config["legend"] = {"position": "right"}
+                    
+                    # 堆叠配置
+                    if is_stack and g2_type in ["column", "bar", "area"]:
+                        g2_config["isStack"] = True
+                        if g2_type == "column":
+                            g2_config["label"] = {
+                                "position": "middle",
+                                "layout": [{"type": "interval-adjust-position"}]
+                            }
+            
+            elif g2_type == "pie":
+                g2_config["angleField"] = y_field
+                g2_config["colorField"] = x_field
+                g2_config["radius"] = 0.8
+                g2_config["label"] = {
+                    "type": "outer",
+                    "content": "{name}: {percentage}"
+                }
+                
+            elif g2_type == "box":
+                g2_config["xField"] = x_field
+                g2_config["yField"] = y_field
+                if series_field:
+                    g2_config["groupField"] = series_field
+            
+            # 添加坐标轴配置
+            if g2_type not in ["pie", "radar"]:
+                g2_config["xAxis"] = {
+                    "title": {"text": x_title}
+                }
+                g2_config["yAxis"] = {
+                    "title": {"text": y_title}
+                }
+            
+            # 添加主题配置
+            g2_config["theme"] = "light"
+            
+            # 添加交互配置
+            g2_config["interactions"] = [{"type": "tooltip"}, {"type": "legend-active"}, {"type": "legend-filter"}]
+            
+            print(f"✅ 成功生成G2配置")
+            return g2_config
+            
+        except Exception as e:
+            print(f"⚠️ 生成G2配置时出错: {str(e)}")
+            traceback.print_exc()
+            # 返回基本配置
+            return {
+                "type": "column",
+                "data": processed_data,
+                "xField": chart_spec.get("xField", "x"),
+                "yField": chart_spec.get("yField", "y"),
+                "title": {"visible": True, "text": chart_spec.get("title", "Chart")}
+            }
+
+    def _map_to_g2_chart_type(self, chart_type):
+        """将通用图表类型映射到G2类型"""
+        chart_type = chart_type.lower()
         
-        return chart_config
+        mapping = {
+            "bar": "column",
+            "bar_chart": "column",
+            "barchart": "column",
+            "column": "column",
+            "line": "line",
+            "line_chart": "line",
+            "linechart": "line",
+            "scatter": "scatter",
+            "scatter_plot": "scatter",
+            "scatterplot": "scatter",
+            "pie": "pie",
+            "pie_chart": "pie",
+            "piechart": "pie",
+            "area": "area",
+            "area_chart": "area",
+            "areachart": "area",
+            "histogram": "column",
+            "boxplot": "box",
+            "box_plot": "box",
+            "box": "box"
+        }
+        
+        return mapping.get(chart_type, "column")  # 默认返回column
+
+    def _render_g2_chart(self, g2_config, output_path):
+        """使用AntV G2渲染图表并保存"""
+        try:
+            print(f"🖌️ 使用AntV G2渲染图表...")
+            
+            # 保存G2配置到临时文件
+            temp_config_path = f"{output_path}.config.json"
+            with open(temp_config_path, 'w', encoding='utf-8') as f:
+                json.dump(g2_config, f, ensure_ascii=False, indent=2)
+            
+            # 调用G2渲染脚本 (使用Node.js)
+            cmd = f"node storyteller/algorithm/utils/render_g2_chart.js {temp_config_path} {output_path}"
+            
+            # 执行命令
+            import subprocess
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            # 检查结果
+            if result.returncode == 0:
+                print(f"✅ 图表渲染成功: {output_path}")
+                # 清理临时文件
+                if os.path.exists(temp_config_path):
+                    os.remove(temp_config_path)
+                return True, output_path
+            else:
+                print(f"⚠️ 图表渲染失败: {result.stderr}")
+                print(f"尝试使用直接 G2Plot 渲染...")
+                
+                # 尝试使用 puppeteer 渲染
+                cmd_alt = f"node storyteller/algorithm/utils/render_g2plot.js {temp_config_path} {output_path}"
+                result_alt = subprocess.run(cmd_alt, shell=True, capture_output=True, text=True)
+                
+                if result_alt.returncode == 0:
+                    print(f"✅ G2Plot 渲染成功: {output_path}")
+                    if os.path.exists(temp_config_path):
+                        os.remove(temp_config_path)
+                    return True, output_path
+                else:
+                    print(f"⚠️ G2Plot 渲染也失败: {result_alt.stderr}")
+                    return False, output_path
+            
+        except Exception as e:
+            print(f"⚠️ 渲染G2图表时出错: {str(e)}")
+            traceback.print_exc()
+            return False, output_path
+
+
 
 class ReviseVis(DataStorytellingAction):
     def __init__(self):
@@ -1405,7 +1424,6 @@ class Charts2Captions(DataStorytellingAction):
         ]
         
         # 设置API调用参数
-        #model = kwargs.get("model", "gpt-4o")
         model = "gpt-4-turbo"
         temperature = kwargs.get("temperature", 0.7)
         max_tokens = kwargs.get("max_tokens", 4096)
@@ -2482,44 +2500,6 @@ class ChartUtils:
         print(f"Debug: 图表将保存到: {charts_dir}")
         
         return charts_dir
-
-    def get_current_iteration_dir(self):
-        """获取当前迭代的输出目录"""
-        try:
-            # 检查是否有当前迭代目录属性
-            if hasattr(self, 'current_iteration_dir') and self.current_iteration_dir:
-                return self.current_iteration_dir
-            
-            # 检查是否有输出根目录属性
-            if hasattr(self, 'output_dir') and self.output_dir:
-                # 找到最新的迭代目录
-                iteration_dirs = glob.glob(os.path.join(self.output_dir, "iteration_*"))
-                if iteration_dirs:
-                    # 按创建时间排序，获取最新的
-                    latest_dir = max(iteration_dirs, key=os.path.getctime)
-                    return latest_dir
-            
-            # 如果没有设置输出目录，使用默认的输出目录
-            default_output_dir = os.path.join("output", "mcts")
-            os.makedirs(default_output_dir, exist_ok=True)
-            
-            # 查找最新的迭代目录
-            iteration_dirs = glob.glob(os.path.join(default_output_dir, "iteration_*"))
-            if iteration_dirs:
-                latest_dir = max(iteration_dirs, key=os.path.getctime)
-                return latest_dir
-            
-            # 如果没有找到迭代目录，创建一个新的
-            new_dir = os.path.join(default_output_dir, f"iteration_{int(time.time())}")
-            os.makedirs(new_dir, exist_ok=True)
-            return new_dir
-            
-        except Exception as e:
-            print(f"⚠️ 获取当前迭代目录时出错: {str(e)}")
-            # 返回临时目录
-            temp_dir = os.path.join("output", "temp_charts")
-            os.makedirs(temp_dir, exist_ok=True)
-            return temp_dir
 
 
 

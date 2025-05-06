@@ -12,7 +12,7 @@ from typing import Dict, Any
 # API配置
 # 学校API配置
 SCHOOL_API_CONFIG = {
-    "API_KEY": "7ca9f48d315049bbad0b355afcd5f3a147a8395e46f249e3b7890ffa9ca5122c",
+    "API_KEY": "51cc660dc31b4843893130c3e2bf220ca0954ba55c9e46f088d5cd22e957d0fb",
     "BASE_URL": "https://gpt-api.hkust-gz.edu.cn/v1",
     "MODEL": "gpt-4-turbo",
     "AUTH_TYPE": "Bearer"  # 使用Bearer授权类型

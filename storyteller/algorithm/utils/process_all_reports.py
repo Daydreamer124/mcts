@@ -23,12 +23,12 @@ def process_all_reports(template='dashboard', all_templates=False, specific_dir=
         # 检查是否存在report.md文件
         report_path = os.path.join(iteration_dir, 'report.md')
         if os.path.exists(report_path):
-            print(f"Processing: {report_path}")
+            print(f"正在处理: {report_path}")
             
             # 对每个模板生成报告
             for template_style in templates_to_use:
                 output_file = os.path.join(iteration_dir, f'report_{template_style}.html')
-                print(f"  Generating {template_style} template...")
+                print(f"  生成 {template_style} 模板...")
                 
                 # 调用报告生成脚本
                 cmd = [
@@ -43,20 +43,22 @@ def process_all_reports(template='dashboard', all_templates=False, specific_dir=
                     result = subprocess.run(cmd, check=True, capture_output=True, text=True)
                     print(f"    {result.stdout.strip()}")
                 except subprocess.CalledProcessError as e:
-                    print(f"    Error processing {report_path} with {template_style}: {e}")
-                    print(f"    Error details: {e.stderr}")
+                    print(f"    处理 {report_path} 使用 {template_style} 时出错: {e}")
+                    print(f"    错误详情: {e.stderr}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Process all markdown reports and generate HTML files')
+    parser = argparse.ArgumentParser(description='处理所有Markdown报告并生成HTML文件')
     parser.add_argument('--template', choices=['sidebar', 'grid', 'magazine', 'dashboard'], 
-                        default='dashboard', help='Template style to use')
-    parser.add_argument('--all', action='store_true', help='Generate reports with all available templates')
-    parser.add_argument('--dir', type=str, help='Specific directory to process instead of all iteration directories')
+                        default='dashboard', help='使用的模板样式')
+    parser.add_argument('--all', action='store_true', help='使用所有可用模板生成报告')
+    parser.add_argument('--dir', type=str, help='处理特定目录而不是所有iteration目录')
     args = parser.parse_args()
     
     process_all_reports(args.template, args.all, args.dir)
     
     if args.all:
-        print("All reports processed with all template styles!")
+        print("所有报告已使用所有模板样式处理完成！")
     else:
-        print(f"All reports processed with {args.template} template!") 
+        print(f"所有报告已使用 {args.template} 模板处理完成！")
+    
+    print("使用AntV G2渲染图表") 
