@@ -21,6 +21,7 @@ from storyteller.algorithm.utils.universalsc import run_universal_self_consisten
 from storyteller.algorithm.utils.unified_framework import unified_generation_framework  # 导入统一框架
 import time
 from tqdm import tqdm
+import glob
 
 
 
@@ -998,6 +999,19 @@ class Tasks2Charts(DataStorytellingAction):
             print(df.head(5).to_string())
             print("-" * 50)
             
+            # 获取数据上下文信息
+            data_context = None
+            try:
+                # 尝试读取数据摘要JSON文件
+                json_path = os.path.join("storyteller", "dataset", "data_context.json")
+                if os.path.exists(json_path):
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        data_summary = json.load(f)
+                        data_context = data_summary.get("dataset_description", "")
+                        print(f"✅ 从JSON文件读取到数据上下文: {data_context[:100]}...")
+            except Exception as e:
+                print(f"⚠️ 读取数据上下文时出错: {str(e)}")
+            
             # 导入AST解析器和配置转换函数
             if use_antv:
                 from storyteller.algorithm.utils.chart_config_extractor import ChartConfigExtractor, convert_to_antv_config as convert_config
@@ -1021,9 +1035,9 @@ class Tasks2Charts(DataStorytellingAction):
             
             # 提取AST配置并修正字段信息
             if "error" not in ast_config:
-                # 使用extractor实例直接调用resolve_chart_data
+                # 使用extractor实例直接调用resolve_chart_data，并传入data_context
                 try:
-                    chart_data = extractor.resolve_chart_data(df)
+                    chart_data = extractor.resolve_chart_data(df, ast_config)
                     print(f"✓ 使用AST解析器的resolve_chart_data方法生成图表数据")
                     # 保存原始代码以便后续处理
                     ast_config["code"] = code
@@ -1031,7 +1045,7 @@ class Tasks2Charts(DataStorytellingAction):
                     print(f"⚠️ 使用resolve_chart_data方法时出错: {e}")
                     chart_data = None
             
-            # 转换为目标配置（Chart.js或AntV G2）
+            # 转换为目标配置（Chart.js或AntV G2），传入data_context
             chart_config = convert_config(ast_config, df)
             
             # 设置标题
@@ -1052,7 +1066,7 @@ class Tasks2Charts(DataStorytellingAction):
                     print(f"- 是否堆叠: {'是' if chart_config.get('isStack', False) else '否'}")
             else:
                 print(f"\n✓ 成功生成Chart.js配置:")
-                print(f"- 图表类型: {chart_config['chart_type']}")
+                print(f"- 图表类型: {chart_config['type']}")
                 print(f"- 图表标题: {chart_config['title']}")
                 print(f"- X轴字段: {chart_config.get('x_field', '')}")
                 print(f"- Y轴字段: {chart_config.get('y_field', '')}")
@@ -1062,8 +1076,8 @@ class Tasks2Charts(DataStorytellingAction):
             
         except Exception as e:
             print(f"⚠️ 提取图表配置时出错: {str(e)}")
-            #import traceback
-            #traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             
             # 回退到原有方法
             # chart_config = self._extract_chart_config_fallback(visualization, task_id, description, df, use_antv)
@@ -2444,6 +2458,44 @@ class ChartUtils:
         print(f"Debug: 图表将保存到: {charts_dir}")
         
         return charts_dir
+
+    def get_current_iteration_dir(self):
+        """获取当前迭代的输出目录"""
+        try:
+            # 检查是否有当前迭代目录属性
+            if hasattr(self, 'current_iteration_dir') and self.current_iteration_dir:
+                return self.current_iteration_dir
+            
+            # 检查是否有输出根目录属性
+            if hasattr(self, 'output_dir') and self.output_dir:
+                # 找到最新的迭代目录
+                iteration_dirs = glob.glob(os.path.join(self.output_dir, "iteration_*"))
+                if iteration_dirs:
+                    # 按创建时间排序，获取最新的
+                    latest_dir = max(iteration_dirs, key=os.path.getctime)
+                    return latest_dir
+            
+            # 如果没有设置输出目录，使用默认的输出目录
+            default_output_dir = os.path.join("output", "mcts")
+            os.makedirs(default_output_dir, exist_ok=True)
+            
+            # 查找最新的迭代目录
+            iteration_dirs = glob.glob(os.path.join(default_output_dir, "iteration_*"))
+            if iteration_dirs:
+                latest_dir = max(iteration_dirs, key=os.path.getctime)
+                return latest_dir
+            
+            # 如果没有找到迭代目录，创建一个新的
+            new_dir = os.path.join(default_output_dir, f"iteration_{int(time.time())}")
+            os.makedirs(new_dir, exist_ok=True)
+            return new_dir
+            
+        except Exception as e:
+            print(f"⚠️ 获取当前迭代目录时出错: {str(e)}")
+            # 返回临时目录
+            temp_dir = os.path.join("output", "temp_charts")
+            os.makedirs(temp_dir, exist_ok=True)
+            return temp_dir
 
 
 

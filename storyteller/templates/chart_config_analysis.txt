@@ -1,0 +1,51 @@
+You are a data visualization expert. Your task is to analyze Python data visualization code and extract configuration information for chart generation.
+
+## Python Visualization Code:
+```python
+{CODE}
+```
+
+## Your Task:
+Analyze the code above and extract the following information:
+1. The type of chart being created (bar, line, scatter, pie, etc.)
+2. The title of the chart (if specified)
+3. The fields used for x-axis and y-axis
+4. Any aggregation method used (sum, mean, count, etc.)
+5. Any grouping or coloring field (hue column)
+6. Whether the chart is stacked (for bar charts)
+7. All DataFrame columns referenced in the code
+8. Any derived columns created in the code (e.g., through binning or transformations)
+
+## Important Patterns to Look For:
+- If the code uses df.groupby('A')['B'].mean(), then 'A' is the x_field, 'B' is the y_field, and 'mean' is the aggregation method
+- If the code uses df['column'].value_counts(), then 'column' is the x_field and 'count' is the aggregation method
+- For pie charts, identify the category field and value field
+- If the code creates new columns with operations like df['New_Column'] = ..., or uses pd.cut() to bin data into categories, identify these as derived columns
+- For binning operations like pd.cut(data['Age'], bins=age_bins, labels=age_labels), the resulting column (e.g., 'Age_Group') should be identified as a derived column and potentially as the x_field if used in plotting
+
+## Expected Output Format:
+Return a JSON object with the extracted configuration. Include only the fields that you can confidently determine from the code:
+
+{
+  "chart_type": "bar/line/scatter/pie/etc",
+  "title": "Chart title if specified",
+  "x_field": "Field used for x-axis",
+  "y_field": "Field used for y-axis/values",
+  "agg_method": "Aggregation method if present (sum, mean, count, etc.)",
+  "hue_column": "Field used for grouping/coloring if present",
+  "is_stacked": true/false,
+  "data_columns": ["list", "of", "referenced", "columns"],
+  "derived_columns": [
+    {
+      "name": "derived column name",
+      "source_column": "original column it's derived from",
+      "derivation_type": "bin/transform/calculate",
+      "parameters": {
+        "relevant": "parameters",
+        "used": "for derivation"
+      }
+    }
+  ]
+}
+
+Return ONLY the JSON without any additional text or explanations. 

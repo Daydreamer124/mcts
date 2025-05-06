@@ -49,3 +49,4 @@ logs/
 node_modules
 
 test_chart_extractor.py
+test_api_env.py
