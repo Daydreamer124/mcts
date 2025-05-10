@@ -48,8 +48,13 @@ class ChartConfigExtractor:
     3. 处理数据并生成G2格式的配置
     """
     
-    def __init__(self):
-        """初始化提取器"""
+    def __init__(self, data_context_path: str = None):
+        """
+        初始化提取器
+        
+        参数:
+            data_context_path: 数据上下文文件路径，包含数据集的列名信息
+        """
         self.default_config = {
             "chart_type": "bar",
             "title": None,
@@ -58,8 +63,69 @@ class ChartConfigExtractor:
             "data_columns": [],
             "hue_column": None,
             "is_stacked": False,
-            "agg_method": None
+            "agg_method": None,
+            "binning": None
         }
+        
+        # 字段映射配置
+        self.field_mappings = {
+            'Purchase_Amount__USD_': {
+                'display': 'Purchase Amount (USD)',
+                'agg_prefix': 'Average'
+            },
+            'Previous_Purchases': {
+                'display': 'Previous Purchases',
+                'agg_prefix': 'Average'
+            },
+            'Review_Rating': {
+                'display': 'Review Rating',
+                'agg_prefix': None
+            }
+        }
+        
+        # 加载数据上下文
+        self.data_context = None
+        if data_context_path:
+            try:
+                with open(data_context_path, 'r', encoding='utf-8') as f:
+                    self.data_context = json.load(f)
+                print(f"✅ 成功加载数据上下文: {data_context_path}")
+            except Exception as e:
+                print(f"⚠️ 加载数据上下文失败: {str(e)}")
+
+    def get_display_name(self, field: str, agg_method: str = None) -> str:
+        """获取字段的显示名称"""
+        if field in self.field_mappings:
+            base_name = self.field_mappings[field]['display']
+            if agg_method and self.field_mappings[field].get('agg_prefix'):
+                prefix = self.field_mappings[field]['agg_prefix']
+                return f"{prefix} {base_name}"
+            return base_name
+        return field
+
+    def _handle_histogram_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """处理直方图特殊配置"""
+        if config['chart_type'] == 'histogram':
+            config['y_field'] = None
+            config['agg_method'] = 'count'
+            
+            # 确保有binning配置
+            if not config.get('binning'):
+                config['binning'] = {
+                    'bin_count': 30,  # 默认30个bins
+                    'bin_width': None
+                }
+        return config
+
+    def _process_aggregation(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """处理聚合配置"""
+        if config.get('agg_method'):
+            y_field = config['y_field']
+            if y_field:
+                config['display_names'] = {
+                    y_field: self.get_display_name(y_field, config['agg_method'])
+                }
+        return config
 
     def extract_from_code(self, code: str) -> Dict[str, Any]:
         """
@@ -74,7 +140,8 @@ class ChartConfigExtractor:
         try:
             # 准备参数
             prompt_args = {
-                "CODE": code
+                "CODE": code,
+                "DATA_CONTEXT": json.dumps(self.data_context, ensure_ascii=False, indent=2) if self.data_context else "{}"
             }
             
             # 获取模板
@@ -99,61 +166,68 @@ class ChartConfigExtractor:
             
             # 实现重试机制
             max_retries = 3
-            for retry in range(max_retries):
+            for attempt in range(max_retries):
                 try:
-                    # 调用LLM，使用全局配置
-                    responses = call_openai(
-                        prompt=prompt,
-                        **llm_kwargs
-                    )
+                    # 调用LLM
+                    responses = call_openai(prompt, **llm_kwargs)
+                    print(f"✅ 成功获取LLM响应 (尝试 {attempt+1}/{max_retries})")
                     
-                    if responses and len(responses) > 0:
-                        response_text = responses[0].strip()
-                        print(f"✅ 成功获取LLM响应 (尝试 {retry+1}/{max_retries})")
-                        
-                        # 解析JSON响应
-                        config = self._parse_json_response(response_text)
-                        
-                        # 如果获取到了配置
-                        if config:
-                            # 填充默认值
-                            return self._fill_config_defaults(config)
+                    # 解析JSON响应
+                    if isinstance(responses, list):
+                        response = responses[0]
+                    else:
+                        response = responses
                     
-                    # 如果没有获取到有效响应，重试
-                    print(f"⚠️ LLM调用没有返回有效配置 (尝试 {retry+1}/{max_retries})")
-                    if retry < max_retries - 1:
-                        print("将在1秒后重试...")
-                        import time
-                        time.sleep(1)
+                    try:
+                        config = json.loads(response)
+                    except:
+                        # 如果直接解析失败，尝试提取JSON部分
+                        import re
+                        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                        if json_match:
+                            config = json.loads(json_match.group(0))
+                        else:
+                            raise ValueError("无法从响应中提取JSON配置")
+                    
+                    # 特殊处理：检测value_counts()操作
+                    if "value_counts()" in code:
+                        # 从代码中提取被统计的字段
+                        import re
+                        field_match = re.search(r"data\['([^']+)'\]\.value_counts\(\)", code)
+                        if field_match:
+                            x_field = field_match.group(1)
+                            config.update({
+                                "chart_type": "bar",
+                                "x_field": x_field,
+                                "y_field": "count",
+                                "agg_method": "count",
+                                "data_columns": [x_field]
+                            })
+                    
+                    # 填充默认值
+                    config = self._fill_config_defaults(config)
+                    
+                    # 处理直方图特殊配置
+                    config = self._handle_histogram_config(config)
+                    
+                    # 处理聚合配置
+                    config = self._process_aggregation(config)
+                    
+                    return config
                     
                 except Exception as e:
-                    print(f"⚠️ LLM API调用出错: {str(e)} (尝试 {retry+1}/{max_retries})")
-                    import traceback
-                    traceback.print_exc()
-                    if retry < max_retries - 1:
-                        print("将在1秒后重试...")
-                        import time
-                        time.sleep(1)
-            
-            # 所有重试都失败，返回默认配置
-            print("⚠️ 达到最大重试次数，返回默认图表配置")
-            
-            # 检查是否是特定图表类型
-            if "hist" in code.lower():
-                default_config = self.default_config.copy()
-                default_config["chart_type"] = "histogram"
-                print("检测到可能是histogram图表，设置默认chart_type为histogram")
-                return default_config
-                
-            return self.default_config.copy()
-        
+                    print(f"⚠️ 尝试 {attempt+1} 失败: {str(e)}")
+                    if attempt == max_retries - 1:
+                        print("❌ 所有重试都失败，返回默认配置")
+                        return self.default_config
+                    else:
+                        print(f"重试中... ({attempt+2}/{max_retries})")
+                    
         except Exception as e:
-            print(f"提取图表配置时出错: {str(e)}")
+            print(f"❌ 提取配置时出错: {str(e)}")
             import traceback
             traceback.print_exc()
-            # 返回默认配置
-            return self.default_config.copy()
-    
+            return self.default_config
     
     def _parse_json_response(self, response_text: str) -> Dict[str, Any]:
         """解析LLM返回的JSON响应"""
@@ -180,7 +254,7 @@ class ChartConfigExtractor:
                 print("所有JSON解析尝试都失败了")
             
         return None
-
+    
     def _fill_config_defaults(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """填充配置中缺失的默认值"""
         # 复制默认配置
@@ -217,7 +291,7 @@ class ChartConfigExtractor:
                 result["title"] = f"{y_field} by {x_field}"
         
         return result
-        
+    
     def _handle_special_chart_types(self, df_copy: pd.DataFrame, chart_type: str, x_field: str, y_field: str) -> Optional[Dict[str, Any]]:
         """处理特殊图表类型（boxplot、violin、histogram、scatter）"""
         try:
@@ -243,8 +317,8 @@ class ChartConfigExtractor:
                     "label": str(x_val),
                     "data": y_values
                 })
-                
-                return {
+            
+            return {
                 "type": chart_type,  # 添加图表类型
                 "labels": labels,
                 "datasets": datasets
@@ -254,7 +328,7 @@ class ChartConfigExtractor:
             print(f"处理{chart_type}数据时出错: {str(e)}")
             import traceback
             traceback.print_exc()
-        return None
+            return None
     
     def _handle_scatter_plot(self, df: pd.DataFrame, x_field: str, y_field: str) -> Dict[str, Any]:
         """处理散点图数据"""
@@ -310,16 +384,7 @@ class ChartConfigExtractor:
         }
         
     def resolve_chart_data(self, df: pd.DataFrame, config: Dict[str, Any] = None):
-        """
-        根据配置从DataFrame中提取数据
-        
-        参数:
-            df: DataFrame对象
-            config: 图表配置
-            
-        返回:
-            图表数据对象
-        """
+        """处理图表数据"""
         if config is None:
             config = {}
             
@@ -330,113 +395,33 @@ class ChartConfigExtractor:
             y_field = config.get("y_field")
             hue_field = config.get("hue_column")
             
-            # 修复: 安全处理agg_method，确保None值不会导致错误
-            agg_method_raw = config.get("agg_method")
-            if agg_method_raw is None:
-                # 根据图表类型设置默认聚合方法
-                if chart_type in ["boxplot", "violin", "histogram", "scatter"]:
-                    agg_method = "none"  # 这些类型不需要聚合
-            else:
-                    agg_method = "sum"   # 默认使用sum作为聚合方法
-        else:
-                agg_method = str(agg_method_raw).lower()
+            # 处理直方图特殊情况
+            if chart_type == "histogram":
+                if not config.get('binning'):
+                    config['binning'] = {'bin_count': 30}
+                return self._prepare_histogram_data(df, x_field, config['binning'])
             
-            is_stacked = config.get("is_stacked", False)
+            # 处理箱线图特殊情况
+            if chart_type == "boxplot":
+                print(f"处理箱线图数据: x={x_field}, y={y_field}")
+                return self._prepare_boxplot_data(df, x_field, y_field)
             
-            # 复制数据以避免修改原始数据
-            df_copy = df.copy()
+            # 处理聚合方法
+            agg_method = config.get("agg_method", "sum")
+            if chart_type in ["scatter"]:
+                agg_method = None
             
-            # 处理特殊图表类型
-            if chart_type in ["boxplot", "violin", "histogram", "scatter"]:
-                result = self._handle_special_chart_types(df_copy, chart_type, x_field, y_field)
-                if result is not None:
-        return result
-
-            # 处理派生列 - 如果配置中包含derived_columns
-            if "derived_columns" in config and isinstance(config["derived_columns"], list):
-                print("发现派生列定义，准备处理...")
-                for derived_col in config["derived_columns"]:
-                    col_name = derived_col.get("name")
-                    source_col = derived_col.get("source_column")
-                    derivation_type = derived_col.get("derivation_type", "").lower()
-                    parameters = derived_col.get("parameters", {})
-                    
-                    if not col_name or not source_col:
-                        print(f"警告: 派生列定义不完整，跳过: {derived_col}")
-                        continue
-                    
-                    # 验证源列存在
-                    if source_col not in df_copy.columns:
-                        print(f"警告: 源列 '{source_col}' 不存在，跳过派生列 '{col_name}'")
-                        continue
-                    
-                    try:
-                        # 根据不同的派生类型处理
-                        if derivation_type == "bin":
-                            # 处理分箱操作
-                            bins = parameters.get("bins")
-                            labels = parameters.get("labels")
-                            right = parameters.get("right", True)
-                            
-                            if isinstance(bins, list) and isinstance(labels, list):
-                                print(f"对列 '{source_col}' 进行分箱操作，创建派生列 '{col_name}'")
-                                df_copy[col_name] = pd.cut(df_copy[source_col], 
-                                                          bins=bins, 
-                                                          labels=labels, 
-                                                          right=right)
-                                print(f"✅ 成功创建分箱列: {col_name}")
-    else:
-                                print(f"警告: 分箱操作缺少必要参数，跳过")
-                        
-                        elif derivation_type == "transform":
-                            # 处理变换操作
-                            transform_type = parameters.get("type", "").lower()
-                            
-                            if transform_type == "log":
-                                df_copy[col_name] = np.log(df_copy[source_col])
-                                print(f"✅ 成功创建对数变换列: {col_name}")
-                            elif transform_type == "sqrt":
-                                df_copy[col_name] = np.sqrt(df_copy[source_col])
-                                print(f"✅ 成功创建平方根变换列: {col_name}")
-                            elif transform_type == "zscore":
-                                df_copy[col_name] = (df_copy[source_col] - df_copy[source_col].mean()) / df_copy[source_col].std()
-                                print(f"✅ 成功创建Z分数标准化列: {col_name}")
-                            else:
-                                print(f"警告: 不支持的变换类型: {transform_type}")
-                        
-                        elif derivation_type == "calculate":
-                            # 处理计算派生列
-                            expression = parameters.get("expression")
-                            if expression:
-                                # 安全地评估表达式 (仅支持简单的数学运算)
-                                if "df[" in expression:
-                                    locals_dict = {"df": df_copy, "np": np}
-                                    df_copy[col_name] = eval(expression, {"__builtins__": {}}, locals_dict)
-                                    print(f"✅ 成功创建计算列: {col_name}")
-                            else:
-                                print(f"警告: 计算派生列缺少表达式参数")
-                        else:
-                            print(f"警告: 未知的派生类型: {derivation_type}")
-                    
-                    except Exception as e:
-                        print(f"创建派生列 '{col_name}' 时出错: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-            
-            # 验证字段存在
-            try:
-                self._validate_fields(df_copy, config)
-            except ValueError as e:
-                print(f"警告: {str(e)}")
+            # 验证字段
+            self._validate_fields(df, config)
             
             # 根据图表类型处理数据
             if chart_type == "pie":
-                return self._prepare_pie_data(df_copy, x_field, y_field, agg_method)
-            elif hue_field and hue_field in df_copy.columns:
-                return self._prepare_grouped_data(df_copy, x_field, y_field, hue_field, agg_method, is_stacked)
+                return self._prepare_pie_data(df, x_field, y_field, agg_method)
+            elif hue_field:
+                return self._prepare_grouped_data(df, x_field, y_field, hue_field, agg_method, config.get("is_stacked", False))
             else:
-                return self._prepare_single_series_data(df_copy, x_field, y_field, agg_method)
-            
+                return self._prepare_single_series_data(df, x_field, y_field, agg_method)
+                
         except Exception as e:
             print(f"处理数据时出错: {str(e)}")
             import traceback
@@ -464,13 +449,71 @@ class ChartConfigExtractor:
             
         return True
     
+    def _calculate_boxplot_stats(self, df: pd.DataFrame, x_field: str, y_field: str) -> List[Dict[str, Any]]:
+        """计算箱线图所需的统计量"""
+        result = []
+        
+        # 对每个分类值计算统计量
+        for category in df[x_field].unique():
+            values = df[df[x_field] == category][y_field].dropna()
+            
+            if len(values) == 0:
+                continue
+            
+            # 计算统计量
+            min_val = values.min()
+            q1 = values.quantile(0.25)
+            median = values.quantile(0.5)
+            q3 = values.quantile(0.75)
+            max_val = values.max()
+            
+            # 计算异常值
+            iqr = q3 - q1
+            lower_bound = q1 - 1.5 * iqr
+            upper_bound = q3 + 1.5 * iqr
+            
+            # 过滤出非异常值的最小和最大值
+            normal_min = values[values >= lower_bound].min()
+            normal_max = values[values <= upper_bound].max()
+            
+            # 获取异常值
+            outliers = values[(values < lower_bound) | (values > upper_bound)].tolist()
+            
+            result.append({
+                x_field: category,
+                "min": float(normal_min),
+                "q1": float(q1),
+                "median": float(median),
+                "q3": float(q3),
+                "max": float(normal_max),
+                "outliers": outliers,
+                "range": [float(normal_min), float(q1), float(median), float(q3), float(normal_max)]
+            })
+        
+        return result
+
+    def _prepare_boxplot_data(self, df: pd.DataFrame, x_field: str, y_field: str) -> List[Dict[str, Any]]:
+        """准备箱线图数据（G2格式）"""
+        if not x_field or x_field not in df.columns:
+            raise ValueError(f"箱线图需要有效的分类字段: {x_field}")
+        if not y_field or y_field not in df.columns:
+            raise ValueError(f"箱线图需要有效的数值字段: {y_field}")
+        
+        try:
+            return self._calculate_boxplot_stats(df, x_field, y_field)
+        except Exception as e:
+            print(f"准备箱线图数据时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
     def _prepare_pie_data(self, df: pd.DataFrame, x_field: str, y_field: str, agg_method: str):
         """准备饼图数据（G2格式）"""
         if not x_field or x_field not in df.columns:
             raise ValueError("饼图需要有效的类别字段")
         
         try:
-            # 如果是聚合操作
+            # 计算各类别的计数或聚合值
             if y_field and y_field in df.columns:
                 if agg_method == "count":
                     data = df.groupby(x_field)[y_field].count()
@@ -485,11 +528,18 @@ class ChartConfigExtractor:
                 # 如果只有x字段，使用计数
                 data = df[x_field].value_counts()
             
-            # 直接返回G2格式数据
-                            return [
-                {"category": str(category), "value": value}
-                for category, value in zip(data.index, data.values)
-            ]
+            # 创建结果DataFrame
+            result_df = pd.DataFrame({
+                'category': data.index,
+                'value': data.values
+            })
+            
+            # 计算百分比
+            total = result_df['value'].sum()
+            result_df['percentage'] = (result_df['value'] / total * 100).round(1)
+            
+            return result_df.to_dict('records')
+            
         except Exception as e:
             print(f"准备饼图数据时出错: {str(e)}")
             import traceback
@@ -497,8 +547,8 @@ class ChartConfigExtractor:
             
             # 返回基本的错误数据结构
             return [
-                {"category": "错误", "value": 0},
-                {"category": "请检查数据", "value": 0}
+                {"category": "错误", "value": 0, "percentage": 0},
+                {"category": "请检查数据", "value": 0, "percentage": 0}
             ]
     
     def _prepare_grouped_data(self, df: pd.DataFrame, x_field: str, y_field: str, hue_field: str, agg_method: str, is_stacked: bool):
@@ -574,10 +624,18 @@ class ChartConfigExtractor:
             df_copy = df.copy()
             
             # 确保数据类型正确
-            for col in [x_field, y_field]:
+            for col in [x_field]:
                 if col and col in df.columns:
                     if df[col].dtype == 'object':
                         df_copy[col] = df_copy[col].astype(str)
+            
+            # 特殊处理：当y_field为'count'时，表示这是一个计数统计
+            if y_field == 'count' or (y_field is None and agg_method == 'count'):
+                counts = df_copy[x_field].value_counts()
+                return [
+                    {x_field: str(x), 'count': int(y)}
+                    for x, y in counts.items()
+                ]
             
             # 处理聚合
             grouped = None
@@ -592,11 +650,14 @@ class ChartConfigExtractor:
                     print("不使用聚合方法，直接使用原始数据")
                     grouped = df_copy.groupby(x_field)[y_field].mean()
             else:
-                    grouped = df_copy.groupby(x_field)[y_field].sum()
+                # 如果没有y_field，使用计数统计
+                grouped = df_copy[x_field].value_counts().sort_index()
+                y_field = 'count'  # 设置y_field为count
             
             if grouped is None:
                 print(f"警告: Y轴字段 '{y_field}' 不存在或为None，使用计数作为Y轴")
                 grouped = df_copy[x_field].value_counts().sort_index()
+                y_field = 'count'  # 设置y_field为count
             
             # 直接返回G2格式数据
             return [
@@ -615,6 +676,47 @@ class ChartConfigExtractor:
                 {x_field: "请检查数据", y_field: 0}
             ]
     
+    def _prepare_histogram_data(self, df: pd.DataFrame, x_field: str, binning: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """准备直方图数据"""
+        if not x_field or x_field not in df.columns:
+            raise ValueError(f"直方图需要有效的分布字段: {x_field}")
+            
+        try:
+            # 获取数据
+            values = df[x_field].dropna()
+            
+            # 计算bin边界
+            bin_count = binning.get('bin_count', 30)
+            bin_width = binning.get('bin_width')
+            
+            if bin_width:
+                bins = np.arange(
+                    values.min(),
+                    values.max() + bin_width,
+                    bin_width
+                )
+            else:
+                bins = bin_count
+                
+            # 计算直方图数据
+            hist, bin_edges = np.histogram(values, bins=bins)
+            
+            # 转换为G2格式
+            data = []
+            for i in range(len(hist)):
+                data.append({
+                    x_field: float(bin_edges[i]),
+                    'count': int(hist[i])
+                })
+                
+            return data
+            
+        except Exception as e:
+            print(f"准备直方图数据时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
     def convert_to_antv_config(self, config: Dict[str, Any], chart_data=None) -> Dict[str, Any]:
         """
         将提取的配置转换为AntV G2配置
@@ -632,6 +734,17 @@ class ChartConfigExtractor:
         y_field = config.get("y_field", "")
         hue_field = config.get("hue_column")
         is_stacked = config.get("is_stacked", False)
+        binning = config.get("binning", {})
+        
+        # 获取显示名称
+        display_names = {}
+        if x_field:
+            display_names[x_field] = self.get_display_name(x_field)
+        if y_field:
+            if y_field == "count":
+                display_names[y_field] = "Count"
+            else:
+                display_names[y_field] = self.get_display_name(y_field, config.get("agg_method"))
         
         # 颜色配置
         colors = [
@@ -644,15 +757,14 @@ class ChartConfigExtractor:
             '#C7C7C7'   # 灰色
         ]
         
-        # 映射图表类型到G2类型
+        # 映射图表类型到G2 V4类型
         type_map = {
             "bar": "interval",
             "line": "line",
             "scatter": "point",
-            "pie": "pie",
-            "boxplot": "box",
-            "histogram": "histogram",
-            "heatmap": "heatmap"
+            "pie": "interval",  # 饼图在G2中是特殊处理的interval
+            "boxplot": "schema",  # 箱线图在G2 V4中使用schema几何标记
+            "histogram": "interval"
         }
         g2_type = type_map.get(chart_type, "interval")
         
@@ -666,17 +778,85 @@ class ChartConfigExtractor:
         }
         
         # 根据图表类型添加特定配置
-        if chart_type == "pie":
+        if chart_type == "histogram":
+            g2_config.update({
+                "xField": x_field,
+                "yField": "count",
+                "binField": x_field,
+                "binWidth": binning.get("bin_width"),
+                "binNumber": binning.get("bin_count", 30),
+                "tooltip": {
+                    "showMarkers": False,
+                    "fields": [x_field, "count"],
+                    "formatter": f"function(datum) {{ return {{ {x_field}: datum.{x_field}, count: datum.count }}; }}"
+                },
+                "meta": {
+                    x_field: {
+                        "alias": display_names.get(x_field, x_field)
+                    },
+                    "count": {
+                        "alias": "Count"
+                    }
+                }
+            })
+        elif chart_type == "pie":
+            # G2 V4 饼图配置
             g2_config.update({
                 "angleField": "value",
                 "colorField": "category",
                 "radius": 0.8,
+                "coordinate": {"type": "theta"},  # 添加极坐标系配置
                 "label": {
                     "type": "outer",
-                    "content": "{name}: {percentage}"
+                    "content": "{name}: {percentage}%"  # 显示名称和百分比
                 },
-                "color": colors
+                "tooltip": {
+                    "showMarkers": False,
+                    "formatter": f"function(datum) {{ return {{ 类别: datum.category, 数量: datum.value, 百分比: datum.percentage + '%' }}; }}"
+                },
+                "color": colors,
+                "interactions": [
+                    {"type": "element-active"},
+                    {"type": "pie-legend-active"}
+                ],
+                "legend": {
+                    "position": "right"
+                }
             })
+        elif chart_type == "boxplot":
+            # G2 V4 箱线图配置
+            g2_config = {
+                "type": "schema",  # G2中使用schema几何标记表示箱线图
+                "data": chart_data or [],
+                "shapeType": "box",  # 指定形状为箱线图
+                "title": title,
+                "autoFit": True,
+                "animation": True,
+                "xField": x_field,
+                "yField": "range",  # 使用包含5个统计值的range字段
+                "meta": {
+                    x_field: {
+                        "alias": display_names.get(x_field, x_field)
+                    },
+                    "range": {
+                        "alias": display_names.get(y_field, y_field)
+                    }
+                },
+                "boxStyle": {
+                    "stroke": "#545454",
+                    "fill": "#1890FF",
+                    "fillOpacity": 0.3
+                },
+                "tooltip": {
+                    "showMarkers": False,
+                    "showCrosshairs": False,
+                    "formatter": f"function(datum) {{ return {{ {x_field}: datum.{x_field}, '最小值': datum.min, '下四分位数': datum.q1, '中位数': datum.median, '上四分位数': datum.q3, '最大值': datum.max }}; }}"
+                },
+                "interactions": [
+                    {"type": "element-active"},
+                    {"type": "legend-active"}
+                ]
+            }
         elif chart_type == "scatter":
             g2_config.update({
                 "xField": x_field,
@@ -688,70 +868,53 @@ class ChartConfigExtractor:
                     "lineWidth": 0.5
                 },
                 "tooltip": {
-                    "showMarkers": False
+                    "showMarkers": False,
+                    "fields": [x_field, y_field],
+                    "formatter": f"function(datum) {{ return {{ {x_field}: datum.{x_field}, {y_field}: datum.{y_field} }}; }}"
                 },
-                "state": {
-                    "active": {
-                        "style": {
-                            "shadowBlur": 4,
-                            "stroke": "#000",
-                            "fill": "red"
-                        }
+                "meta": {
+                    x_field: {
+                        "alias": display_names.get(x_field, x_field)
+                    },
+                    y_field: {
+                        "alias": display_names.get(y_field, y_field)
                     }
                 }
             })
-        elif chart_type == "boxplot":
-            # 为箱线图添加特定配置
+        else:
+            # 柱状图、折线图通用配置
             g2_config.update({
                 "xField": x_field,
                 "yField": y_field,
-                "groupField": hue_field if hue_field else x_field,  # 如果没有hue_field，使用x_field作为分组
-                "boxStyle": {
-                    "stroke": "#545454",
-                    "fill": colors[0],
-                    "fillOpacity": 0.3
-                },
-                "outliersStyle": {
-                    "fill": "#f5222d",
-                    "fillOpacity": 0.5
-                },
-                "tooltip": {
-                    "showMarkers": False,
-                    "showTitle": False,
-                    "formatter": "(datum) => { return { name: '统计值', value: [" +
-                                "'最小值: ' + datum.min, " +
-                                "'第一四分位数: ' + datum.q1, " +
-                                "'中位数: ' + datum.median, " +
-                                "'第三四分位数: ' + datum.q3, " +
-                                "'最大值: ' + datum.max" +
-                                "].join('<br/>') }; }"
+                "meta": {
+                    x_field: {
+                        "alias": display_names.get(x_field, x_field)
+                    },
+                    y_field: {
+                        "alias": display_names.get(y_field, y_field)
+                    }
                 }
             })
             
-            # 如果提供了分组字段，添加颜色映射
-            if hue_field:
-                g2_config["colorField"] = hue_field
-                g2_config["color"] = colors
-        else:
-            # 非饼图通用配置
-            g2_config.update({
-                "xField": x_field,
-                "yField": y_field
-            })
-            
             # 添加分组字段
-        if hue_field:
+            if hue_field:
                 g2_config["seriesField"] = hue_field
                 g2_config["color"] = colors
-        else:
+                g2_config["meta"][hue_field] = {
+                    "alias": self.get_display_name(hue_field)
+                }
+            else:
                 g2_config["color"] = colors[0]
             
             # 堆叠配置
-            if is_stacked and chart_type == "bar":
+            if is_stacked and chart_type in ["bar", "column"]:
                 g2_config["isStack"] = True
+                # 确保堆叠图有正确的分组字段
+                if not g2_config.get("seriesField") and hue_field:
+                    g2_config["seriesField"] = hue_field
             
             # 图表样式配置
-            if chart_type == "bar" or chart_type == "column":
+            if chart_type in ["bar", "column"]:
                 g2_config["columnStyle"] = {
                     "fillOpacity": 0.7,
                     "lineWidth": 1
@@ -769,20 +932,26 @@ class ChartConfigExtractor:
                     }
                 }
         
-        # 添加图例配置
+        # 添加图例配置（除了已有特定配置的图表类型）
+        if chart_type not in ["pie", "boxplot"]:
         g2_config["legend"] = {
-            "position": "right"
+            "position": "right",
+            "itemName": {
+                "formatter": f"function(text) {{ return '{display_names.get(hue_field, '')}' || text; }}"
+            }
         }
         
-        # 添加工具提示配置
-        if "tooltip" not in g2_config:  # 确保不覆盖特定图表类型的配置
+        # 添加工具提示配置（除了已有特定配置的图表类型）
+        if not g2_config.get("tooltip") and chart_type not in ["pie", "boxplot"]:
             g2_config["tooltip"] = {
                 "showMarkers": True,
                 "showCrosshairs": chart_type == "line",
-                "shared": True
+                "shared": True,
+                "formatter": f"function(datum) {{ const result = {{}}; for (const key in datum) {{ result[key] = datum[key]; }}; return result; }}"
             }
         
-        # 添加交互配置
+        # 添加交互配置（除了已有特定配置的图表类型）
+        if chart_type not in ["pie", "boxplot"] and not g2_config.get("interactions"):
         g2_config["interactions"] = [
             {"type": "element-active"},
             {"type": "legend-active"},
@@ -790,3 +959,248 @@ class ChartConfigExtractor:
         ]
         
         return g2_config
+
+    def convert_to_vegalite_config(self, config: Dict[str, Any], chart_data=None) -> Dict[str, Any]:
+        """
+        将提取的配置转换为Vega-Lite配置
+        
+        参数:
+            config: 提取的图表配置
+            chart_data: 处理后的图表数据
+            
+        返回:
+            Vega-Lite配置对象
+        """
+        chart_type = config.get("chart_type", "bar")
+        title = config.get("title", "")
+        x_field = config.get("x_field", "")
+        y_field = config.get("y_field", "")
+        hue_field = config.get("hue_column")
+        is_stacked = config.get("is_stacked", False)
+        
+        # 获取显示名称
+        display_names = {}
+        if x_field:
+            display_names[x_field] = self.get_display_name(x_field)
+        if y_field:
+            if y_field == "count":
+                display_names[y_field] = "Count"
+            else:
+                display_names[y_field] = self.get_display_name(y_field, config.get("agg_method"))
+        
+        # 确保有数据
+        if not chart_data:
+            chart_data = []
+        
+        # 基础Vega-Lite配置
+        vegalite_config = {
+            "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+            "title": title,
+            "data": {"values": chart_data},
+            "width": "container",
+            "height": 400,
+            "background": "white",
+            "config": {
+                "axis": {
+                    "titleFontSize": 14,
+                    "labelFontSize": 12
+                },
+                "header": {
+                    "titleFontSize": 14,
+                    "labelFontSize": 12
+                },
+                "title": {
+                    "fontSize": 16,
+                    "font": "sans-serif",
+                    "fontWeight": "bold"
+                }
+            }
+        }
+        
+        # 根据图表类型设置mark和编码
+        encoding = {}
+        
+        if chart_type == "bar":
+            vegalite_config["mark"] = "bar"
+            
+            # 设置编码
+            encoding = {
+                "x": {
+                    "field": x_field, 
+                    "type": "nominal",
+                    "title": display_names.get(x_field, x_field)
+                },
+                "y": {
+                    "field": y_field, 
+                    "type": "quantitative",
+                    "title": display_names.get(y_field, y_field)
+                },
+                "tooltip": [
+                    {"field": x_field, "type": "nominal", "title": display_names.get(x_field, x_field)},
+                    {"field": y_field, "type": "quantitative", "title": display_names.get(y_field, y_field)}
+                ]
+            }
+            
+            # 处理分组和堆叠
+            if hue_field:
+                encoding["color"] = {
+                    "field": hue_field, 
+                    "type": "nominal",
+                    "title": self.get_display_name(hue_field)
+                }
+                encoding["tooltip"].append({"field": hue_field, "type": "nominal", "title": self.get_display_name(hue_field)})
+                
+                if is_stacked:
+                    vegalite_config["mark"] = {"type": "bar", "stack": "zero"}
+                else:
+                    # 分组柱状图
+                    vegalite_config["mark"] = {"type": "bar", "opacity": 0.8}
+        
+        elif chart_type == "line":
+            vegalite_config["mark"] = {"type": "line", "point": True}
+            
+            # 设置编码
+            encoding = {
+                "x": {
+                    "field": x_field, 
+                    "type": "nominal",
+                    "title": display_names.get(x_field, x_field)
+                },
+                "y": {
+                    "field": y_field, 
+                    "type": "quantitative",
+                    "title": display_names.get(y_field, y_field)
+                },
+                "tooltip": [
+                    {"field": x_field, "type": "nominal", "title": display_names.get(x_field, x_field)},
+                    {"field": y_field, "type": "quantitative", "title": display_names.get(y_field, y_field)}
+                ]
+            }
+            
+            if hue_field:
+                encoding["color"] = {
+                    "field": hue_field, 
+                    "type": "nominal",
+                    "title": self.get_display_name(hue_field)
+                }
+                encoding["tooltip"].append({"field": hue_field, "type": "nominal", "title": self.get_display_name(hue_field)})
+        
+        elif chart_type == "scatter":
+            vegalite_config["mark"] = {"type": "point", "opacity": 0.7, "size": 60}
+            
+            # 设置编码
+            encoding = {
+                "x": {
+                    "field": x_field, 
+                    "type": "quantitative",
+                    "title": display_names.get(x_field, x_field)
+                },
+                "y": {
+                    "field": y_field, 
+                    "type": "quantitative",
+                    "title": display_names.get(y_field, y_field)
+                },
+                "tooltip": [
+                    {"field": x_field, "type": "quantitative", "title": display_names.get(x_field, x_field)},
+                    {"field": y_field, "type": "quantitative", "title": display_names.get(y_field, y_field)}
+                ]
+            }
+            
+            if hue_field:
+                encoding["color"] = {
+                    "field": hue_field, 
+                    "type": "nominal",
+                    "title": self.get_display_name(hue_field)
+                }
+                encoding["tooltip"].append({"field": hue_field, "type": "nominal", "title": self.get_display_name(hue_field)})
+        
+        elif chart_type == "pie":
+            # 饼图在Vega-Lite中需要特殊处理
+            # 对于饼图，我们需要确保数据包含category和value字段
+            
+            vegalite_config["mark"] = {"type": "arc", "innerRadius": 0}
+            
+            encoding = {
+                "theta": {"field": "value", "type": "quantitative"},
+                "color": {"field": "category", "type": "nominal"},
+                "tooltip": [
+                    {"field": "category", "type": "nominal", "title": "Category"},
+                    {"field": "value", "type": "quantitative", "title": "Value"},
+                    {"field": "percentage", "type": "quantitative", "title": "Percentage", "format": ".1f"}
+                ]
+            }
+            
+            # 添加百分比标签
+            vegalite_config["transform"] = [{
+                "calculate": "datum.percentage + '%'",
+                "as": "percentageLabel"
+            }]
+            
+            encoding["text"] = {"field": "percentageLabel", "type": "nominal"}
+            vegalite_config["mark"]["text"] = {"radiusOffset": 10}
+        
+        elif chart_type == "boxplot":
+            # 箱线图需要特殊处理
+            # 在Vega-Lite中，箱线图有内置支持
+            vegalite_config["mark"] = {"type": "boxplot", "extent": "min-max"}
+            
+            # 箱线图数据处理，Vega-Lite需要原始数据点
+            # 如果传入的是已经计算好的统计值，需要转换回原始数据格式
+            if chart_data and len(chart_data) > 0 and "range" in chart_data[0]:
+                print("检测到预计算的箱线图数据，转换为Vega-Lite格式")
+                # 转换为Vega-Lite可用的格式
+                new_data = []
+                for item in chart_data:
+                    if x_field in item and "range" in item:
+                        x_val = item[x_field]
+                        # 创建合成数据点来表示箱线图
+                        # 这里使用q1, median, q3和min/max值来创建合成数据
+                        new_data.append({x_field: x_val, y_field: item.get("min", item["range"][0])})
+                        new_data.append({x_field: x_val, y_field: item.get("q1", item["range"][1])})
+                        new_data.append({x_field: x_val, y_field: item.get("median", item["range"][2])})
+                        new_data.append({x_field: x_val, y_field: item.get("q3", item["range"][3])})
+                        new_data.append({x_field: x_val, y_field: item.get("max", item["range"][4])})
+                        # 添加异常值如果存在
+                        if "outliers" in item and item["outliers"]:
+                            for outlier in item["outliers"]:
+                                new_data.append({x_field: x_val, y_field: outlier})
+                
+                chart_data = new_data
+                vegalite_config["data"]["values"] = chart_data
+            
+            encoding = {
+                "x": {
+                    "field": x_field,
+                    "type": "nominal",
+                    "title": display_names.get(x_field, x_field)
+                },
+                "y": {
+                    "field": y_field,
+                    "type": "quantitative",
+                    "title": display_names.get(y_field, y_field)
+                }
+            }
+        
+        elif chart_type == "histogram":
+            # 直方图在Vega-Lite中有专门的mark类型
+            vegalite_config["mark"] = "bar"
+            
+            bin_count = config.get("binning", {}).get("bin_count", 10)
+            
+            encoding = {
+                "x": {
+                    "field": x_field,
+                    "type": "quantitative",
+                    "bin": {"maxbins": bin_count},
+                    "title": display_names.get(x_field, x_field)
+                },
+                "y": {
+                    "aggregate": "count",
+                    "title": "Count"
+                }
+            }
+        
+        # 添加编码到配置
+        vegalite_config["encoding"] = encoding
+        
+        return vegalite_config

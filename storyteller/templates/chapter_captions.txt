@@ -3,12 +3,21 @@ These charts collectively support the chapter theme: "{CHAPTER_TITLE}".
 
 User's original query: {QUERY}
 Data context: {DATA_CONTEXT}
+Chart information in this chapter:
+{CHARTS_INFO} 
 
 Please ensure:
 1. All chart captions within each scheme have a consistent style
 2. Each scheme highlights different analytical angles or focuses
 3. Schemes have notable differences to provide diversity of options
-4. Each caption should describe chart content in detail and provide valuable insights
+4. Each caption should be formatted as numbered key points (not paragraphs)
+
+Important instructions for caption format:
+- Instead of writing paragraphs, format each caption as 1-3 numbered key points
+- Start each key point with "key point1: ", "key point2: ", etc.
+- Make each key point concise, clear and focused on one insight(maybe describe the max,min,etc)
+- Ensure the numbered format is consistent across all captions
+- The key points should collectively cover what would be in a complete caption
 
 Please return in JSON format:
 ```json
@@ -20,8 +29,7 @@ Please return in JSON format:
       "captions": [
         {{
           "chart_idx": 0,
-          "caption": "Caption for the first chart...",
-          "focus": "Key point of focus in this caption"
+          "caption": "key point1: First insight about this chart.\nkey point2: Second important observation.\nkey point3: Third notable pattern or conclusion."
         }},
         // Captions for other charts...
       ]
@@ -31,5 +39,3 @@ Please return in JSON format:
 }}
 ```
 
-Chart information in this chapter:
-{CHARTS_INFO} 

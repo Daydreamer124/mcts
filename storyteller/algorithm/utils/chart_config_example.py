@@ -66,40 +66,48 @@ def test_binning_extraction():
     # 定义要测试的分箱代码
     bin_code = """
 import matplotlib.pyplot as plt
-import pandas as pd
-import seaborn as sns
+import numpy as np
 
-def plot(data: pd.DataFrame):
+def plot(data):
     plt.figure(figsize=(10, 6))
-    sns.boxplot(x='Gender', y='Review_Rating', data=data, palette='Set2')
-    plt.title('Comparison of review ratings between male and female customers', wrap=True)
-    plt.xlabel('Gender')
-    plt.ylabel('Review Rating')
-    plt.legend(title='Gender', labels=['Male', 'Female'])
-    return plt;
+    plt.hist(data['Purchase_Amount__USD_'], bins=30, edgecolor='black')
+    plt.title('Distribution of Purchase Amounts')
+    plt.xlabel('Purchase Amount (USD)')
+    plt.ylabel('Count')
+    return plt
 
 chart = plot(data)
 """
     
-    print("\n==== 测试分箱操作 ====")
+    print("\n==== 测试直方图 ====")
     print("1. 从代码中提取配置...")
-    extractor = ChartConfigExtractor()
+    
+    # 创建临时的数据上下文文件
+    context = {
+        "columns": [
+            {"name": "Purchase_Amount__USD_", "type": "numeric"},
+            {"name": "Age", "type": "numeric"},
+            {"name": "Gender", "type": "categorical"},
+            {"name": "Item_Category", "type": "categorical"}
+        ]
+    }
+    
+    context_file = "temp_context.json"
+    with open(context_file, "w") as f:
+        json.dump(context, f)
+    
+    extractor = ChartConfigExtractor(data_context_path=context_file)
     config = extractor.extract_from_code(bin_code)
     
     print("\n提取的配置:")
     print(json.dumps(config, indent=2, ensure_ascii=False))
-    
-    # 如果没有Review_Rating列，添加一个模拟列
-    if 'Review_Rating' not in df.columns:
-        print("\n添加模拟的Review_Rating列用于测试")
-        df['Review_Rating'] = np.random.randint(1, 6, len(df))
     
     # 处理数据
     print("\n2. 使用提取的配置处理数据...")
     chart_data = extractor.resolve_chart_data(df, config)
     
     print("\n处理后的数据:")
-    print(json.dumps(chart_data, indent=2, ensure_ascii=False))
+    print(json.dumps(chart_data[:5], indent=2, ensure_ascii=False))  # 只显示前5条数据
     
     # 转换为AntV配置
     print("\n3. 转换为AntV配置...")
@@ -107,6 +115,9 @@ chart = plot(data)
     
     print("\nAntV配置:")
     print(json.dumps(antv_config, indent=2, ensure_ascii=False))
+    
+    # 清理临时文件
+    os.remove(context_file)
 
 def test_scatter_chart():
     """测试散点图数据处理"""
@@ -116,24 +127,36 @@ def test_scatter_chart():
     # 定义要测试的散点图代码
     scatter_code = """
 import matplotlib.pyplot as plt
-import pandas as pd
 
-def plot(data: pd.DataFrame):
+def plot(data):
     plt.figure(figsize=(10, 6))
-    plt.scatter(data['Age'], data['Purchase_Amount__USD_'], alpha=0.6, edgecolors='w', linewidth=0.5)
+    plt.scatter(data['Age'], data['Purchase_Amount__USD_'], alpha=0.6)
+    plt.title('Age vs Purchase Amount')
     plt.xlabel('Age')
     plt.ylabel('Purchase Amount (USD)')
-    plt.title('Age vs. purchase amount correlation', wrap=True)
-    plt.grid(True)
-    plt.legend(['Purchase Amount'], loc='upper right')
-    return plt;
+    return plt
 
 chart = plot(data)
 """
     
     print("\n==== 测试散点图 ====")
     print("1. 从代码中提取配置...")
-    extractor = ChartConfigExtractor()
+    
+    # 创建临时的数据上下文文件
+    context = {
+        "columns": [
+            {"name": "Purchase_Amount__USD_", "type": "numeric"},
+            {"name": "Age", "type": "numeric"},
+            {"name": "Gender", "type": "categorical"},
+            {"name": "Item_Category", "type": "categorical"}
+        ]
+    }
+    
+    context_file = "temp_context.json"
+    with open(context_file, "w") as f:
+        json.dump(context, f)
+    
+    extractor = ChartConfigExtractor(data_context_path=context_file)
     config = extractor.extract_from_code(scatter_code)
     
     print("\n提取的配置:")
@@ -144,6 +167,66 @@ chart = plot(data)
     chart_data = extractor.resolve_chart_data(df, config)
     
     print("\n处理后的数据:")
+    print(json.dumps(chart_data[:5], indent=2, ensure_ascii=False))  # 只显示前5条数据
+    
+    # 转换为AntV配置
+    print("\n3. 转换为AntV配置...")
+    antv_config = extractor.convert_to_antv_config(config, chart_data)
+    
+    print("\nAntV配置:")
+    print(json.dumps(antv_config, indent=2, ensure_ascii=False))
+    
+    # 清理临时文件
+    os.remove(context_file)
+
+def test_bar_chart():
+    """测试柱状图数据处理"""
+    # 创建示例数据
+    df = create_sample_data()
+    
+    # 定义要测试的柱状图代码
+    bar_code = """
+import matplotlib.pyplot as plt
+
+def plot(data):
+    plt.figure(figsize=(10, 6))
+    data.groupby('Item_Category')['Purchase_Amount__USD_'].mean().plot(kind='bar')
+    plt.title('Average Purchase Amount by Category')
+    plt.xlabel('Category')
+    plt.ylabel('Average Purchase Amount (USD)')
+    return plt
+
+chart = plot(data)
+"""
+    
+    print("\n==== 测试柱状图 ====")
+    print("1. 从代码中提取配置...")
+    
+    # 创建临时的数据上下文文件
+    context = {
+        "columns": [
+            {"name": "Purchase_Amount__USD_", "type": "numeric"},
+            {"name": "Age", "type": "numeric"},
+            {"name": "Gender", "type": "categorical"},
+            {"name": "Item_Category", "type": "categorical"}
+        ]
+    }
+    
+    context_file = "temp_context.json"
+    with open(context_file, "w") as f:
+        json.dump(context, f)
+    
+    extractor = ChartConfigExtractor(data_context_path=context_file)
+    config = extractor.extract_from_code(bar_code)
+    
+    print("\n提取的配置:")
+    print(json.dumps(config, indent=2, ensure_ascii=False))
+    
+    # 处理数据
+    print("\n2. 使用提取的配置处理数据...")
+    chart_data = extractor.resolve_chart_data(df, config)
+    
+    print("\n处理后的数据:")
     print(json.dumps(chart_data, indent=2, ensure_ascii=False))
     
     # 转换为AntV配置
@@ -152,14 +235,20 @@ chart = plot(data)
     
     print("\nAntV配置:")
     print(json.dumps(antv_config, indent=2, ensure_ascii=False))
+    
+    # 清理临时文件
+    os.remove(context_file)
 
 def main():
     """主函数"""
-    # 测试分箱提取和处理
+    # 测试直方图
     test_binning_extraction()
     
-    # 测试散点图处理
+    # 测试散点图
     test_scatter_chart()
+    
+    # 测试柱状图
+    test_bar_chart()
 
 if __name__ == "__main__":
     main() 

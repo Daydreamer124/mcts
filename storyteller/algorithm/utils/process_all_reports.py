@@ -61,4 +61,3 @@ if __name__ == "__main__":
     else:
         print(f"所有报告已使用 {args.template} 模板处理完成！")
     
-    print("使用AntV G2渲染图表") 

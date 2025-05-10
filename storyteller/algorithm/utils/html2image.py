@@ -89,7 +89,7 @@ def convert_html_file_to_image(html_file, output_path=None, debug=False):
         page = context.new_page()
         
         try:
-        # 加载HTML文件
+            # 加载HTML文件
             page.goto(f"file://{os.path.abspath(html_file)}", 
                       wait_until="domcontentloaded",  # 等待DOM内容加载
                       timeout=60000)  # 增加超时时间到60秒
@@ -270,103 +270,110 @@ def convert_html_file_to_image(html_file, output_path=None, debug=False):
                     """)
                     
                     # 等待足够长的时间让图表渲染
-            page.wait_for_timeout(3000)
-                    
-                    # 检查图表是否已初始化和渲染
-                    charts_initialized = page.evaluate("window.chartsInitialized")
-                    charts_rendered = page.evaluate("window.chartsRendered")
-                    
-                    if debug:
-                        if charts_initialized:
-                            print("图表已初始化完成")
-                        else:
-                            print("未检测到图表初始化完成")
-                        
-                        if charts_rendered:
-                            print("图表已完全渲染")
-                        else:
-                            print("图表渲染可能未完成")
-                    
-                    # 等待渲染完成Promise解析结果
                     try:
-                        wait_result = page.evaluate("window.waitForChartsRendered")
-                        if debug and wait_result:
-                            print("等待图表渲染的Promise已解析: " + str(wait_result))
+                        page.wait_for_timeout(3000)
+                        
+                        # 检查图表是否已初始化和渲染
+                        charts_initialized = page.evaluate("window.chartsInitialized")
+                        charts_rendered = page.evaluate("window.chartsRendered")
+                        
+                        if debug:
+                            if charts_initialized:
+                                print("图表已初始化完成")
+                            else:
+                                print("未检测到图表初始化完成")
+                        
+                            if charts_rendered:
+                                print("图表已完全渲染")
+                            else:
+                                print("图表渲染可能未完成")
+                        
+                        # 等待渲染完成Promise解析结果
+                        try:
+                            wait_result = page.evaluate("window.waitForChartsRendered")
+                            if debug and wait_result:
+                                print("等待图表渲染的Promise已解析: " + str(wait_result))
+                        except Exception as e:
+                            if debug:
+                                print(f"等待图表渲染Promise时出错: {e}")
+                        
+                        # 额外注入脚本触发图表重绘（再次尝试）
+                        page.add_script_tag(content="""
+                        try {
+                            // 尝试获取所有G2图表容器
+                            var chartContainers = document.querySelectorAll('div[id^="antv_chart_"]');
+                            console.log('找到 ' + chartContainers.length + ' 个图表容器');
+                            
+                            // 如果有图表容器，尝试手动触发渲染
+                            if (chartContainers.length > 0) {
+                                // 创建并触发resize事件，这通常会导致图表重绘
+                                window.dispatchEvent(new Event('resize'));
+                                console.log('已触发窗口resize事件');
+                            }
+                            
+                            // 如果存在chartInstances对象，尝试调用render方法
+                            if (window.chartInstances) {
+                                Object.values(window.chartInstances).forEach(function(chart) {
+                                    if (chart && typeof chart.render === 'function') {
+                                        chart.render();
+                                        console.log('已调用图表render方法');
+                                    }
+                                });
+                            }
+                        } catch (e) {
+                            console.error('尝试重绘图表时出错:', e);
+                        }
+                        """)
+                        
+                        # 再次等待以确保重绘完成
+                        page.wait_for_timeout(5000)
+                        
                     except Exception as e:
                         if debug:
-                            print(f"等待图表渲染Promise时出错: {e}")
+                            print(f"等待图表初始化时出错: {e}")
+                    else:
+                        if debug:
+                            print("页面中未找到AntV G2图表容器")
                     
-                    # 额外注入脚本触发图表重绘（再次尝试）
-                    page.add_script_tag(content="""
-                    try {
-                        // 尝试获取所有G2图表容器
-                        var chartContainers = document.querySelectorAll('div[id^="antv_chart_"]');
-                        console.log('找到 ' + chartContainers.length + ' 个图表容器');
-                        
-                        // 如果有图表容器，尝试手动触发渲染
-                        if (chartContainers.length > 0) {
-                            // 创建并触发resize事件，这通常会导致图表重绘
-                            window.dispatchEvent(new Event('resize'));
-                            console.log('已触发窗口resize事件');
-                        }
-                        
-                        // 如果存在chartInstances对象，尝试调用render方法
-                        if (window.chartInstances) {
-                            Object.values(window.chartInstances).forEach(function(chart) {
-                                if (chart && typeof chart.render === 'function') {
-                                    chart.render();
-                                    console.log('已调用图表render方法');
-                                }
-                            });
-                        }
-                    } catch (e) {
-                        console.error('尝试重绘图表时出错:', e);
-                    }
-                    """)
+                    # 等待图片元素（如果有的话）
+                    try:
+                        has_images = page.evaluate("!!document.querySelector('img')")
+                        if has_images:
+                            if debug:
+                                print("页面包含图片元素，等待图片加载")
+                            page.wait_for_selector("img", state="visible", timeout=30000)
+                    except Exception as e:
+                        if debug:
+                            print(f"等待图片元素时出错: {e}")
                     
-                    # 再次等待以确保重绘完成
+                    # 最后的等待，确保所有渲染都完成
                     page.wait_for_timeout(5000)
+                    if debug:
+                        print("最终等待完成，准备截图")
+                    
+                    # 获取页面实际高度并设置视口
+                    height = page.evaluate("document.documentElement.scrollHeight")
+                    page.set_viewport_size({"width": 1280, "height": height})
+                    
+                    # 截图
+                    page.screenshot(path=output_path, full_page=True)
+                    if debug:
+                        print(f"截图完成: {output_path}")
                     
                 except Exception as e:
-                    if debug:
-                        print(f"等待图表初始化时出错: {e}")
-            else:
-                if debug:
-                    print("页面中未找到AntV G2图表容器")
+                    print(f"截图过程中出错: {e}")
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    browser.close()
             
-            # 等待图片元素（如果有的话）
-            try:
-                has_images = page.evaluate("!!document.querySelector('img')")
-                if has_images:
-                    if debug:
-                        print("页面包含图片元素，等待图片加载")
-                    page.wait_for_selector("img", state="visible", timeout=30000)
+            return output_path 
         except Exception as e:
-                if debug:
-                    print(f"等待图片元素时出错: {e}")
-            
-            # 最后的等待，确保所有渲染都完成
-            page.wait_for_timeout(5000)
+            print(f"加载HTML文件时出错: {e}")
             if debug:
-                print("最终等待完成，准备截图")
-            
-            # 获取页面实际高度并设置视口
-            height = page.evaluate("document.documentElement.scrollHeight")
-            page.set_viewport_size({"width": 1280, "height": height})
-        
-        # 截图
-        page.screenshot(path=output_path, full_page=True)
-            if debug:
-                print(f"截图完成: {output_path}")
-            
-        except Exception as e:
-            print(f"截图过程中出错: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-        browser.close()
-    
-    return output_path 
+                traceback.print_exc()
+            browser.close()
+            return None
 
 def test_html_to_image():
     """测试函数：测试将HTML文件转换为图片"""

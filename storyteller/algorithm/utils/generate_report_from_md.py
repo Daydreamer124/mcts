@@ -55,6 +55,7 @@ def parse_markdown(md_path):
             
             # 尝试查找对应的JSON配置文件
             config_path = None
+            vegalite_config_path = None
             
             if img_path.lower().endswith('.png'):
                 # 构建可能的JSON配置文件路径
@@ -66,6 +67,9 @@ def parse_markdown(md_path):
                 # 首先尝试在同级的chart_configs目录查找
                 config_dir = os.path.join(os.path.dirname(img_dir), "chart_configs")
                 
+                # 查找Vega-Lite配置文件
+                vegalite_config_dir = os.path.join(os.path.dirname(img_dir), "vegalite_configs")
+                
                 # 尝试多种可能的配置文件名
                 possible_config_paths = [
                     os.path.join(config_dir, f"{img_basename}.json"),
@@ -75,10 +79,23 @@ def parse_markdown(md_path):
                     os.path.join(img_dir, f"{img_basename}_config.json")
                 ]
                 
+                # 尝试多种可能的Vega-Lite配置文件名
+                possible_vegalite_paths = [
+                    os.path.join(vegalite_config_dir, f"{img_basename}.json"),
+                    os.path.join(vegalite_config_dir, f"{escape_filename(img_basename)}.json"),
+                    os.path.join(vegalite_config_dir, f"{escape_filename(current_caption)}.json")
+                ]
+                
                 for path in possible_config_paths:
                     if os.path.exists(path):
                         config_path = path
                         print(f"找到图表配置文件: {config_path}")
+                        break
+                
+                for path in possible_vegalite_paths:
+                    if os.path.exists(path):
+                        vegalite_config_path = path
+                        print(f"找到Vega-Lite配置文件: {vegalite_config_path}")
                         break
             
             chart_info = {
@@ -89,6 +106,10 @@ def parse_markdown(md_path):
             # 如果找到了配置文件，添加到图表信息中
             if config_path:
                 chart_info["config"] = config_path
+            
+            # 如果找到了Vega-Lite配置文件，添加到图表信息中
+            if vegalite_config_path:
+                chart_info["vegalite_config"] = vegalite_config_path
                 
             current_section["charts"].append(chart_info)
         elif tag.name == 'h3' and tag.get_text(strip=True) == "Chapter Summary":
@@ -127,6 +148,14 @@ def parse_markdown(md_path):
         sections.append(current_section)
     return sections
 
+# 辅助函数，将文件名中的特殊字符转换为下划线，避免在查找文件时出错
+def escape_filename(name):
+    if not name:
+        return "unnamed"
+    # 将特殊字符转换为下划线，保留字母、数字和常见标点
+    import re
+    return re.sub(r'[^\w\-\.]', '_', name)
+
 # 移动辅助函数到前面，这样其他函数可以引用它
 # 辅助函数：将绝对路径转换为相对路径
 def convert_to_relative_path(path):
@@ -144,10 +173,10 @@ def convert_to_relative_path(path):
             return path
     return path
 
-# 添加一个通用函数来处理AntV G2配置
-def prepare_antv_config(sections):
+# 添加一个通用函数来处理Vega-Lite配置
+def prepare_vegalite_config(sections):
     """
-    为sections中的所有图表准备AntV G2配置
+    为sections中的所有图表准备Vega-Lite配置
     返回：
     - chart_configs: 包含所有图表配置的列表
     - chart_id_counter: 用于生成唯一图表ID的计数器
@@ -160,70 +189,58 @@ def prepare_antv_config(sections):
     
     for section in sections:
         for chart in section.get("charts", []):
-            config_path = chart.get("config", "")
+            vegalite_config_path = chart.get("vegalite_config", "")
             img_path = chart.get("img", "")
             
-            if config_path:
-                # 如果有配置文件，使用AntV G2渲染
-                chart_id = f"antv_chart_{chart_id_counter}"
+            if vegalite_config_path:
+                # 如果有配置文件，使用Vega-Lite渲染
+                chart_id = f"vegalite_chart_{chart_id_counter}"
                 chart_id_counter += 1
                 
                 # 读取JSON配置文件内容
                 try:
-                    with open(config_path, 'r', encoding='utf-8') as f:
-                        config_content = json.load(f)
-                        
-                    # 转换为AntV G2配置
-                    antv_config = {
-                        'type': config_content.get('chartType', 'interval'),
-                        'data': config_content.get('data', []),
-                        'xField': config_content.get('xField'),
-                        'yField': config_content.get('yField'),
-                        'seriesField': config_content.get('seriesField'),
-                        'isStack': config_content.get('isStack', False),
-                        'title': config_content.get('title'),
-                        'xTitle': config_content.get('xTitle'),
-                        'yTitle': config_content.get('yTitle'),
-                        'color': config_content.get('color'),
-                        'autoFit': True
-                    }
-                
-                # 获取相对路径并保存图片路径
-                relative_img_path = convert_to_relative_path(img_path)
-                
-                # 保存配置信息
-                chart_configs.append({
-                    "chartId": chart_id,
-                        "configContent": antv_config,
+                    with open(vegalite_config_path, 'r', encoding='utf-8') as f:
+                        vegalite_spec = json.load(f)
+                    
+                    # 获取相对路径并保存图片路径
+                    relative_img_path = convert_to_relative_path(img_path)
+                    
+                    # 保存配置信息
+                    chart_configs.append({
+                        "chartId": chart_id,
+                        "vegaliteSpec": vegalite_spec,
                         "imgPath": relative_img_path
-                })
-                
-                # 在图表对象上添加chart_id属性，以便模板函数使用
-                chart["chart_id"] = chart_id
-                # 标记为AntV图表
-                chart["is_antv"] = True
+                    })
+                    
+                    # 在图表对象上添加chart_id属性，以便模板函数使用
+                    chart["chart_id"] = chart_id
+                    # 标记为Vega-Lite图表
+                    chart["is_vegalite"] = True
                     
                 except Exception as e:
-                    print(f"读取配置文件失败: {config_path}, 错误: {e}")
+                    print(f"读取Vega-Lite配置文件失败: {vegalite_config_path}, 错误: {e}")
                     continue
     
     return chart_configs, chart_id_counter
 
-# 添加生成AntV G2脚本的函数
-def generate_antv_script(chart_configs):
+# 生成Vega-Lite渲染脚本
+def generate_vegalite_script(chart_configs):
     """
-    根据图表配置生成通用的AntV G2初始化脚本
+    根据图表配置生成Vega-Lite渲染脚本
     """
     if not chart_configs:
         return ""
         
     chart_script = """
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
 <script>
 // 存储图表实例的对象
-const chartInstances = {};
+const vegaChartInstances = {};
 
 // 初始化图表的函数
-function initializeChart(chartId, configObj, fallbackImgPath) {
+function initializeVegaChart(chartId, vegaSpec, fallbackImgPath) {
     const container = document.getElementById(chartId);
     
     if (!container) {
@@ -232,133 +249,24 @@ function initializeChart(chartId, configObj, fallbackImgPath) {
     }
     
     try {
-        console.log(`Initializing chart ${chartId} with config:`, configObj);
+        console.log(`Initializing Vega-Lite chart ${chartId}`);
         
-        // 创建AntV G2图表
-        const chart = new G2.Chart({
-            container: chartId,
-            autoFit: true,
-            height: 400,
-            padding: [30, 40, 60, 60]
+        // 使用vega-embed渲染图表
+        vegaEmbed('#' + chartId, vegaSpec, {
+            renderer: 'canvas',
+            actions: true
+        }).then(result => {
+            console.log(`Chart ${chartId} rendered successfully`);
+            vegaChartInstances[chartId] = result;
+            container.setAttribute('data-initialized', 'true');
+        }).catch(error => {
+            console.error(`Error rendering chart ${chartId}:`, error);
+            fallbackToImage(chartId, fallbackImgPath);
         });
         
-        // 设置数据
-        chart.data(configObj.data || []);
-        
-        // 配置坐标轴和图形
-        let geometry;
-        if (configObj.type === 'line') {
-            geometry = chart.line();
-        } else if (configObj.type === 'point') {
-            geometry = chart.point();
-        } else if (configObj.type === 'interval') {
-            geometry = chart.interval();
-        } else if (configObj.type === 'pie') {
-            geometry = chart.interval().adjust('stack').coord('theta');
-        } else if (configObj.type === 'box') {
-            // 处理箱线图类型
-            geometry = chart.box();
-            // 确保有必要的字段
-            if (configObj.xField && configObj.yField) {
-                geometry.position(`${configObj.xField}*${configObj.yField}`);
-            }
-            // 添加分组字段
-            if (configObj.groupField) {
-                geometry.adjust([
-                    {
-                        type: 'dodge',
-                        marginRatio: 0.5
-                    }
-                ]);
-            }
-            // 添加样式
-            if (configObj.boxStyle) {
-                geometry.style(configObj.boxStyle);
-            }
-            // 配置离群点样式
-            if (configObj.outliersStyle) {
-                geometry.outliers().style(configObj.outliersStyle);
-            }
-            // 添加颜色映射
-            if (configObj.colorField) {
-                geometry.color(configObj.colorField, configObj.color || 'category10');
-            }
-            // 跳过下面的通用position设置
-            configObj.positionConfigured = true;
-        } else {
-            geometry = chart.interval();
-        }
-        
-        // 配置position
-        if (configObj.type !== 'pie' && !configObj.positionConfigured) {
-            if (configObj.xField && configObj.yField) {
-                geometry.position(`${configObj.xField}*${configObj.yField}`);
-            }
-        } else if (configObj.type === 'pie') {
-            if (configObj.angleField && configObj.colorField) {
-                geometry.position('1*' + configObj.angleField);
-                geometry.color(configObj.colorField);
-            }
-        }
-        
-        // 配置color
-        if (configObj.seriesField && configObj.color) {
-            geometry.color(configObj.seriesField, configObj.color);
-        } else if (configObj.seriesField) {
-            geometry.color(configObj.seriesField);
-        } else if (configObj.color) {
-            geometry.color(configObj.color);
-        }
-        
-        // 堆叠配置
-        if (configObj.isStack && configObj.type === 'interval') {
-            geometry.adjust('stack');
-        }
-        
-        // 标题配置
-        if (configObj.title) {
-            chart.annotation().text({
-                position: ['50%', '0%'],
-                content: configObj.title,
-                style: {
-                    fontSize: 18,
-                    fontWeight: 'bold',
-                    fill: '#333',
-                    textAlign: 'center',
-                },
-                offsetY: -20
-            });
-        }
-        
-        // 坐标轴配置
-        if (configObj.xTitle) {
-            chart.axis(configObj.xField, {
-                title: {
-                    text: configObj.xTitle
-                }
-            });
-        }
-        if (configObj.yTitle) {
-            chart.axis(configObj.yField, {
-                title: {
-                    text: configObj.yTitle
-                }
-            });
-        }
-        
-        // 渲染图表
-        chart.render();
-        
-        // 存储图表实例以便后续引用
-        chartInstances[chartId] = chart;
-        
-        // 标记为已初始化
-        container.setAttribute('data-initialized', 'true');
-        
-        return chart;
     } catch (error) {
         console.error(`Error creating chart ${chartId}:`, error);
-        fallbackToImage(chartId, configObj.imgPath);
+        fallbackToImage(chartId, fallbackImgPath);
         return null;
     }
 }
@@ -386,25 +294,25 @@ function fallbackToImage(chartId, fallbackImgPath) {
 // 页面加载完成后初始化所有图表
 document.addEventListener('DOMContentLoaded', function() {
 """
-    # 首先添加所有图表配置
+    # 添加所有图表配置并初始化
     for i, config in enumerate(chart_configs):
         # 将Python字典转换为JSON字符串
-        json_str = json.dumps(config['configContent'])
-        chart_script += f"    const config_{i} = {json_str};\n"
-    
-    # 然后为每个图表添加初始化代码
-    for i, config in enumerate(chart_configs):
-        chart_script += f"    initializeChart('{config['chartId']}', config_{i}, '{config['imgPath']}');\n"
+        json_str = json.dumps(config['vegaliteSpec'])
+        chart_script += f"    const vegaSpec_{i} = {json_str};\n"
+        chart_script += f"    initializeVegaChart('{config['chartId']}', vegaSpec_{i}, '{config['imgPath']}');\n"
     
     chart_script += """
     // 添加一个定时器检查图表是否正确渲染
     setTimeout(function() {
-        document.querySelectorAll('div[id^="antv_chart_"]').forEach(container => {
+        document.querySelectorAll('div[id^="vegalite_chart_"]').forEach(container => {
             const chartId = container.id;
             // 检查该图表是否已标记为初始化
-            if (!container.getAttribute('data-initialized') || !chartInstances[chartId]) {
+            if (!container.getAttribute('data-initialized')) {
                 console.log(`Chart ${chartId} was not initialized properly, falling back to image`);
-                fallbackToImage(chartId);
+                const imgPath = container.getAttribute('data-fallback');
+                if (imgPath) {
+                    fallbackToImage(chartId, imgPath);
+                }
             }
         });
     }, 2000); // 延长等待时间到2秒
@@ -441,8 +349,8 @@ def fill_template(sections, template_type="dashboard"):
 def generate_sidebar_template(sections):
     from html import escape
     
-    # 处理图表配置
-    chart_configs, chart_id_counter = prepare_antv_config(sections)
+    # 处理图表配置，使用Vega-Lite
+    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
     
     # 生成导航链接
     nav_links = ""
@@ -471,22 +379,28 @@ def generate_sidebar_template(sections):
         for chart in section["charts"]:
             img = chart.get("img", "")
             caption = chart.get("caption", "")
-            config = chart.get("config", "")
+            vegalite_config = chart.get("vegalite_config", "")
+            is_vegalite = chart.get("is_vegalite", False)
             
-            if config:
+            if is_vegalite:
                 chart_id = chart.get("chart_id", "")
-                is_antv = chart.get("is_antv", True)
                 
-                main_content += f'''      <div class="chart-container">
-        <div id="{chart_id}"></div>
-        <p class="caption">{escape(caption)}</p>
+                # 添加data-fallback属性以供回退使用
+                relative_img_path = convert_to_relative_path(img)
+                main_content += f'''      <div class="chart-card">
+        <div class="chart-wrapper">
+          <div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div>
+        </div>
+        <div class="caption">{escape(caption)}</div>
       </div>\n'''
             else:
                 # 获取相对路径
                 relative_img_path = convert_to_relative_path(img)
-                main_content += f'''      <div class="chart-container">
-        <img src="{relative_img_path}" width="100%">
-        <p class="caption">{escape(caption)}</p>
+                main_content += f'''      <div class="chart-card">
+        <div class="chart-wrapper">
+          <img src="{relative_img_path}" width="100%">
+        </div>
+        <div class="caption">{escape(caption)}</div>
       </div>\n'''
             
         # 添加章节小结
@@ -496,8 +410,8 @@ def generate_sidebar_template(sections):
             
         main_content += '    </section>\n\n'
     
-    # 生成AntV G2脚本
-    chart_script = generate_antv_script(chart_configs)
+    # 生成Vega-Lite脚本
+    chart_script = generate_vegalite_script(chart_configs)
     
     # 组装HTML
     html = f'''<!DOCTYPE html>
@@ -506,7 +420,6 @@ def generate_sidebar_template(sections):
   <meta charset="UTF-8">
   <title>数据分析报告</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/@antv/g2@4.2.8/dist/g2.min.js"></script>
   <style>
     :root {{
       --primary-color: #4f46e5;
@@ -681,29 +594,41 @@ def generate_sidebar_template(sections):
       margin-right: 0.75rem;
     }}
     
-    .chart-container {{
+    .chart-card {{
       margin: 2rem 0;
       border-radius: 0.5rem;
       overflow: hidden;
       box-shadow: var(--shadow-md);
       transition: all 0.3s ease;
-      height: 400px;
+      display: flex;
+      flex-direction: column;
     }}
     
-    .chart-container:hover {{
+    .chart-card:hover {{
       transform: translateY(-4px);
       box-shadow: var(--shadow-lg);
     }}
     
-    .chart-container img {{
-      border-radius: 0.5rem 0.5rem 0 0;
-      display: block;
+    .chart-wrapper {{
+      position: relative;
+      height: 400px;
       width: 100%;
+      overflow: hidden;
     }}
     
-    .chart-container div[id^="antv_chart_"] {{
-      width: 100% !important;
-      height: 100% !important;
+    .chart-wrapper img {{
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }}
+    
+    .chart-container {{
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
     }}
     
     .caption {{
@@ -775,6 +700,17 @@ def generate_sidebar_template(sections):
     
     .insights-container {{
       margin-bottom: 2rem;
+    }}
+    
+    /* Vega-Lite特定样式 */
+    .vega-embed {{
+      width: 100%;
+      height: 100%;
+    }}
+    .vega-embed .vega-actions {{
+      top: 0;
+      right: 0;
+      padding: 6px;
     }}
     
     /* 响应式设计 */
@@ -858,7 +794,7 @@ def generate_grid_template(sections):
     import os.path
     
     # 处理图表配置
-    chart_configs, chart_id_counter = prepare_antv_config(sections)
+    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
     
     # 生成图表卡片内容
     cards_html = ""
@@ -884,21 +820,26 @@ def generate_grid_template(sections):
             img = chart.get("img", "")
             caption = chart.get("caption", "")
             config = chart.get("config", "")
+            is_vegalite = chart.get("is_vegalite", False)
             
             cards_html += f'  <div class="card">\n'
             
-            if config:
-                # 如果有配置文件，使用Chart.js渲染
+            # 获取相对路径
+            relative_img_path = convert_to_relative_path(img)
+            
+            if is_vegalite:
+                # 如果是Vega-Lite图表，使用div容器
                 chart_id = chart.get("chart_id", "")
-                
-                cards_html += f'    <div class="chart-container">\n'
+                cards_html += f'    <div class="chart-wrapper"><div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div></div>\n'
+            elif config:
+                # 如果有配置文件但不是Vega-Lite，使用Canvas渲染
+                chart_id = chart.get("chart_id", "")
+                cards_html += f'    <div class="chart-wrapper">\n'
                 cards_html += f'      <canvas id="{chart_id}"></canvas>\n'
-                cards_html += f'</div>\n'
+                cards_html += f'    </div>\n'
             else:
                 # 没有配置文件，使用静态图片
-                # 转换为相对路径
-                relative_img_path = convert_to_relative_path(img)
-                cards_html += f'    <img src="{relative_img_path}" alt="{escape(caption)}">\n'
+                cards_html += f'    <div class="chart-wrapper"><img src="{relative_img_path}" alt="{escape(caption)}"></div>\n'
             
             cards_html += f'    <div class="card-caption">{escape(caption)}</div>\n'
             cards_html += '  </div>\n'
@@ -911,7 +852,7 @@ def generate_grid_template(sections):
             cards_html += f'<div class="summary"><p><strong>Chapter Summary：</strong> {escape(summary)}</p></div>\n'
     
     # 生成Chart.js脚本
-    chart_script = generate_antv_script(chart_configs)
+    chart_script = generate_vegalite_script(chart_configs)
     
     # 组装HTML
     html = f'''<!DOCTYPE html>
@@ -920,19 +861,59 @@ def generate_grid_template(sections):
   <meta charset="UTF-8">
   <title>数据分析报告</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
   <style>
     body {{ font-family: 'Inter', sans-serif; background-color: #f8f9fa; color: #333; max-width: 1200px; margin: 0 auto; padding: 2rem; }}
     h1 {{ text-align: center; color: #303f9f; margin-bottom: 2rem; font-size: 2.2rem; }}
     .section-title {{ width: 100%; margin: 2rem 0 1rem 0; }}
     h2 {{ color: #303f9f; border-bottom: 2px solid #5c6bc0; padding-bottom: 0.5rem; }}
     .card-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(450px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }}
-    .card {{ background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.3s, box-shadow 0.3s; }}
+    .card {{ 
+      background: white; 
+      border-radius: 8px; 
+      overflow: hidden; 
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+      transition: transform 0.3s, box-shadow 0.3s;
+      display: flex;
+      flex-direction: column;
+    }}
     .card:hover {{ transform: translateY(-5px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }}
-    .card img {{ width: 100%; height: auto; display: block; }}
-    .chart-container {{ height: 300px; position: relative; margin-bottom: 0; }}
-    .card-caption {{ padding: 1rem; font-size: 0.95rem; color: #555; }}
+    
+    .chart-wrapper {{ 
+      flex: 1;
+      position: relative;
+      min-height: 300px;
+      width: 100%;
+      overflow: hidden;
+    }}
+    
+    .chart-container {{ 
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }}
+    
+    .card img {{ 
+      width: 100%; 
+      height: 100%;
+      object-fit: contain;
+      display: block; 
+    }}
+    
+    .card-caption {{ 
+      padding: 1rem; 
+      font-size: 0.95rem; 
+      color: #555; 
+      border-top: 1px solid #eee;
+      background-color: #fcfcfc;
+    }}
+    
     .summary {{ background-color: white; border-left: 4px solid #5c6bc0; padding: 1.5rem; margin: 0 0 3rem 0; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
+    
     .insights-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }}
     .insight-card {{ 
       background: white; 
@@ -950,6 +931,16 @@ def generate_grid_template(sections):
     @media (max-width: 768px) {{
       .card-grid {{ grid-template-columns: 1fr; }}
     }}
+    /* Vega-Lite特定样式 */
+    .vega-embed {{
+      width: 100%;
+      height: 100%;
+    }}
+    .vega-embed .vega-actions {{
+      top: 0;
+      right: 0;
+      padding: 6px;
+    }}
   </style>
 </head>
 <body>
@@ -964,7 +955,7 @@ def generate_dark_template(sections):
     from html import escape
     
     # 处理图表配置
-    chart_configs, chart_id_counter = prepare_antv_config(sections)
+    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
     
     def highlight_keywords_dark(text):
         if not text:
@@ -978,7 +969,9 @@ def generate_dark_template(sections):
   <meta charset="UTF-8">
   <title>数据分析报告</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
   <style>
     body { 
       font-family: 'Inter', sans-serif; 
@@ -1118,7 +1111,7 @@ def generate_dark_template(sections):
             html_body += f"<div class='summary'><strong>Chapter Summary：</strong> {highlight_keywords_dark(summary)}</div>\n"
 
     # 生成Chart.js脚本
-    chart_script = generate_antv_script(chart_configs)
+    chart_script = generate_vegalite_script(chart_configs)
     
     html_tail = chart_script + "</body></html>"
 
@@ -1129,14 +1122,7 @@ def generate_magazine_template(sections):
     from html import escape
     
     # 处理图表配置
-    chart_configs, chart_id_counter = prepare_antv_config(sections)
-    
-    # 添加高亮关键词的辅助函数
-    def highlight_keywords(text):
-        if not text:
-            return ""
-        # 这里可以添加关键词高亮逻辑
-        return text
+    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
     
     magazine_content = '''
     <!DOCTYPE html>
@@ -1144,22 +1130,22 @@ def generate_magazine_template(sections):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>数据分析杂志</title>
-        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Source+Sans+Pro:wght@300;400;600&display=swap" rel="stylesheet">
-        '''
-    
-    # 添加AntV G2脚本
-    magazine_content += '<script src="https://unpkg.com/@antv/g2@4.2.8/dist/g2.min.js"></script>'
-    
-    magazine_content += '''
+        <title>数据分析报告</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
         <style>
             :root {
-                --accent-color: #e63946;
-                --heading-color: #1d3557;
-                --text-color: #333;
-                --bg-color: #fff;
-                --light-bg: #f1faee;
-                --border-color: #eee;
+                --primary-color: #0066cc;
+                --secondary-color: #00994d;
+                --text-color: #333333;
+                --bg-color: #f0f2f5;
+                --paper-color: #ffffff;
+                --border-color: #e2e8f0;
+                --highlight-bg: #e6f3ff;
+                --chart-bg-1: #e6ffe6;
+                --chart-bg-2: #f0f9ff;
             }
             
             * {
@@ -1169,371 +1155,317 @@ def generate_magazine_template(sections):
             }
             
             body {
-                font-family: 'Source Sans Pro', sans-serif;
+                font-family: 'Inter', sans-serif;
                 color: var(--text-color);
                 background-color: var(--bg-color);
                 line-height: 1.6;
+                padding: 2rem;
+                min-height: 100vh;
+            }
+            
+            .paper-container {
                 max-width: 1200px;
                 margin: 0 auto;
-                padding: 0 2rem;
+                background: var(--paper-color);
+                box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+                border-radius: 8px;
+                padding: 3rem;
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .paper-container::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
             }
             
             .magazine-header {
-                padding: 3rem 0;
-                text-align: center;
-                border-bottom: 1px solid var(--border-color);
+                background: linear-gradient(135deg, var(--primary-color), #0099cc);
+                color: white;
+                padding: 2.5rem;
+                border-radius: 8px;
                 margin-bottom: 3rem;
+                text-align: left;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             }
             
             .magazine-title {
-                font-family: 'Playfair Display', serif;
-                font-weight: 900;
-                font-size: 3.5rem;
-                color: #000;
-                margin-bottom: 1rem;
-                letter-spacing: -0.5px;
+                font-family: 'Inter', sans-serif;
+                font-weight: 700;
+                font-size: 2.4rem;
+                margin-bottom: 0.5rem;
             }
             
             .magazine-subtitle {
-                font-family: 'Source Sans Pro', sans-serif;
-                font-weight: 300;
-                font-size: 1.2rem;
-                color: #777;
-                max-width: 700px;
-                margin: 0 auto;
-            }
-            
-            h2 {
-                font-family: 'Playfair Display', serif;
-                font-weight: 700;
-                font-size: 2.5rem;
-                color: var(--heading-color);
-                margin-bottom: 1.5rem;
-                line-height: 1.2;
+                font-size: 1.1rem;
+                opacity: 0.9;
             }
             
             .magazine-article {
-                margin-bottom: 5rem;
-                padding-bottom: 3rem;
+                margin-bottom: 4rem;
+                padding-bottom: 2rem;
                 border-bottom: 1px solid var(--border-color);
             }
             
-            .magazine-article:last-child {
-                border-bottom: none;
+            .article-header {
+                margin-bottom: 2rem;
+            }
+            
+            h2 {
+                font-family: 'Inter', sans-serif;
+                font-size: 1.8rem;
+                color: var(--primary-color);
+                margin-bottom: 1.5rem;
+                border-bottom: 2px solid var(--border-color);
+                padding-bottom: 0.5rem;
+            }
+            
+            .article-content {
+                display: grid;
+                gap: 2rem;
+            }
+            
+            .layout-left-right {
+                grid-template-columns: 1fr 2fr;
+            }
+            
+            .layout-right-left {
+                grid-template-columns: 2fr 1fr;
+            }
+            
+            .layout-equal {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .layout-full {
+                grid-template-columns: 1fr;
+            }
+            
+            .narrative-section {
+                background: var(--highlight-bg);
+                padding: 1.5rem;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             }
             
             .chapter-summary {
-                font-size: 1.2rem;
+                font-size: 1rem;
                 line-height: 1.7;
-                margin-bottom: 2rem;
-                color: #555;
-                padding: 2rem;
-                background: var(--light-bg);
-                border-radius: 8px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                color: var(--text-color);
             }
             
-            .gallery {
+            .charts-section {
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                gap: 2rem;
-                margin: 2rem 0;
+                gap: 1.5rem;
             }
             
-            figure {
-                margin: 0;
-                background: var(--light-bg);
+            .charts-horizontal {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .charts-vertical {
+                grid-template-columns: 1fr;
+            }
+            
+            .chart-container-wrapper {
+                background: white;
                 border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
                 overflow: hidden;
-                box-shadow: 0 8px 30px rgba(0,0,0,0.12);
-                transition: transform 0.3s;
+                transition: transform 0.2s ease;
             }
             
-            figure:hover {
-                transform: translateY(-5px);
+            .chart-container-wrapper:hover {
+                transform: translateY(-2px);
             }
             
-            figure img {
-                width: 100%;
-                display: block;
+            .chart-wrapper {
+                position: relative;
+                height: 350px;
+                padding: 1rem;
             }
             
             .chart-container {
-                height: 400px;
-                position: relative;
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
             }
             
             .figure-caption {
-                padding: 1rem;
-                font-size: 0.95rem;
-                color: #666;
-                background: white;
+                padding: 0.8rem 1rem;
+                font-size: 0.9rem;
+                color: var(--text-color);
+                background: var(--chart-bg-2);
                 border-top: 1px solid var(--border-color);
             }
             
-            .side-by-side {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 3rem;
-                align-items: start;
-            }
-            
-            .visual-content {
-                display: grid;
-                gap: 2rem;
-            }
-            
-            .feature-header {
-                margin-bottom: 2rem;
-            }
-            
-            .feature-hero {
+            .key-insight {
+                background-color: rgba(79, 70, 229, 0.1);
+                border-radius: 8px;
+                padding: 1rem 1.2rem;
+                margin: 1rem 0;
                 position: relative;
+                border-left: 4px solid var(--primary-color);
+            }
+            
+            .key-insight:before {
+                content: "💡";
+                font-size: 1.2rem;
+                position: absolute;
+                left: -12px;
+                top: -12px;
+                background: white;
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            
+            .key-insight-content {
+                font-weight: 500;
+                color: var(--text-color);
+            }
+            
+            .insights-container {
                 margin-bottom: 2rem;
-                border-radius: 8px;
-                overflow: hidden;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.15);
             }
             
-            .feature-hero img {
+            /* Vega-Lite特定样式 */
+            .vega-embed {
                 width: 100%;
-                display: block;
+                height: 100%;
+                padding: 0.5rem;
             }
             
-            .feature-content {
-                padding: 2rem;
-                background: var(--light-bg);
-                border-radius: 8px;
+            .vega-embed .vega-actions {
+                top: 0.5rem;
+                right: 0.5rem;
+                padding: 0.5rem;
+                background: rgba(255,255,255,0.95);
+                border-radius: 4px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
             
-            .secondary-visuals {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                gap: 2rem;
-                margin-top: 2rem;
-            }
-            
-            .highlight {
-                color: var(--accent-color);
-                font-weight: 600;
-            }
-            
-            @media (max-width: 768px) {
-                .side-by-side {
+            @media (max-width: 1024px) {
+                .article-content {
+                    grid-template-columns: 1fr !important;
+                }
+                
+                .charts-horizontal {
                     grid-template-columns: 1fr;
                 }
                 
-                .magazine-title {
-                    font-size: 2.5rem;
+                body {
+                    padding: 1rem;
+                }
+                
+                .magazine-header {
+                    padding: 1.5rem;
                 }
                 
                 h2 {
-                    font-size: 2rem;
+                    font-size: 1.5rem;
                 }
             }
         </style>
     </head>
     <body>
-        <header class="magazine-header">
-            <h1 class="magazine-title">Data Analysis Report</h1>
-            <p class="magazine-subtitle">A comprehensive analysis of the dataset</p>
-        </header>
+        <div class="paper-container">
+            <header class="magazine-header">
+                <h1 class="magazine-title">Data Analysis Report</h1>
+                <p class="magazine-subtitle">A comprehensive analysis of customer behavior and purchasing patterns</p>
+            </header>
     '''
     
-    for section in sections:
-        title = section.get("title", "")
+    for i, section in enumerate(sections, 1):
+        title = section["title"]
         summary = section.get("summary", "")
         charts = section.get("charts", [])
         
-        # 随机选择布局风格
-        layout_styles = ["full-width", "side-by-side", "feature"]
-        layout_style = random.choice(layout_styles)
-        
-        if layout_style == "full-width":
-            magazine_content += f'''
-            <article class="magazine-article full-width">
+        magazine_content += f'''
+        <article class="magazine-article">
+            <div class="article-header">
                 <h2>{escape(title)}</h2>
-                <div class="chapter-summary">
-                    {highlight_keywords(summary)}
-                </div>
-                <div class="gallery">
-            '''
-            
-            # 添加关键指标（如果有的话）
-            key_insights = section.get("key_insights", [])
-            if key_insights:
-                magazine_content += f'''
-                <div class="insights-section">
-                    <h3 class="insights-title">关键发现</h3>
-                    <div class="insights-list">
-                '''
-                
-                for insight in key_insights:
-                    magazine_content += f'''
-                        <div class="insight-item">
-                            <div class="insight-icon">💡</div>
-                            <div class="insight-text">{escape(insight)}</div>
-                        </div>
-                    '''
-                
-                magazine_content += '</div></div>\n'
-            
-            for chart in charts:
-                img = chart.get("img", "")
-                caption = chart.get("caption", "")
-                config = chart.get("config", "")
-                
-                magazine_content += f'<figure>\n'
-                
-                if config:
-                    chart_id = chart.get("chart_id", "")
-                    is_antv = chart.get("is_antv", True)
-                    
-                    # AntV G2使用div容器
-                    magazine_content += f'<div class="chart-container" id="{chart_id}"></div>\n'
-                else:
-                    # 获取相对路径
-                    relative_img_path = convert_to_relative_path(img)
-                    magazine_content += f'<img src="{relative_img_path}" alt="图表">\n'
-                
-                magazine_content += f'<figcaption class="figure-caption">{escape(caption)}</figcaption>\n'
-                magazine_content += f'</figure>\n'
-            
-            magazine_content += '</div></article>'
-            
-        elif layout_style == "side-by-side":
-            magazine_content += f'''
-            <article class="magazine-article side-by-side">
-                <div class="text-content">
-                    <h2>{escape(title)}</h2>
-                    <div class="chapter-summary">
-                        {highlight_keywords(summary)}
-                    </div>
-                </div>
-                <div class="visual-content">
-            '''
-            
-            # 添加关键指标（如果有的话）
-            key_insights = section.get("key_insights", [])
-            if key_insights:
-                magazine_content += '<div class="insights-list">\n'
-                for insight in key_insights:
-                    magazine_content += f'''
-                    <div class="insight-item">
-                        <div class="insight-icon">💡</div>
-                        <div class="insight-text">{escape(insight)}</div>
-                    </div>
-                    '''
-                magazine_content += '</div>\n'
-            
-            for chart in charts:
-                img = chart.get("img", "")
-                caption = chart.get("caption", "")
-                config = chart.get("config", "")
-                
-                magazine_content += f'<figure>\n'
-                
-                if config:
-                    chart_id = chart.get("chart_id", "")
-                    is_antv = chart.get("is_antv", True)
-                    
-                    # AntV G2使用div容器
-                    magazine_content += f'<div class="chart-container" id="{chart_id}"></div>\n'
-                else:
-                    # 获取相对路径
-                    relative_img_path = convert_to_relative_path(img)
-                    magazine_content += f'<img src="{relative_img_path}" alt="图表">\n'
-                
-                magazine_content += f'<figcaption class="figure-caption">{escape(caption)}</figcaption>\n'
-                magazine_content += f'</figure>\n'
-            
-            magazine_content += '</div></article>'
-            
-        elif layout_style == "feature":
-            magazine_content += f'''
-            <article class="magazine-article feature">
-                <div class="feature-header">
-                    <h2>{escape(title)}</h2>
-                </div>
-                <div class="feature-content">
-                    <div class="chapter-summary">
-                        {highlight_keywords(summary)}
-                    </div>
-                </div>
-            '''
-            
-            # 添加关键指标（如果有的话）
-            key_insights = section.get("key_insights", [])
-            if key_insights:
-                magazine_content += '<div class="insights-feature">\n'
-                for insight in key_insights:
-                    magazine_content += f'''
-                    <div class="insight-feature-item">
-                        <div class="insight-icon">💡</div>
-                        <div class="insight-text">{escape(insight)}</div>
-                    </div>
-                    '''
-                magazine_content += '</div>\n'
-            
-            magazine_content += '''
             </div>
-            '''
+        '''
+        
+        # 根据图表数量选择布局
+        if len(charts) == 1:
+            layout_class = "layout-left-right"
+        elif len(charts) == 2:
+            layout_class = "layout-equal"
+        else:
+            layout_class = "layout-full"
             
-            if charts and len(charts) > 0:
-                featured_chart = charts[0]
-                img = featured_chart.get('img', '')
-                caption = featured_chart.get('caption', '')
-                config = featured_chart.get('config', '')
+        magazine_content += f'<div class="article-content {layout_class}">\n'
+        
+        # 添加叙述部分
+        magazine_content += '''
+            <div class="narrative-section">
+                <div class="chapter-summary">
+        '''
+        magazine_content += escape(summary) if summary else ""
+        magazine_content += '''
+                </div>
+        '''
+        
+        # 添加关键指标（如果有的话）
+        key_insights = section.get("key_insights", [])
+        if key_insights:
+            magazine_content += '<div class="insights-container">\n'
+            for insight in key_insights:
+                magazine_content += f'''
+                    <div class="key-insight">
+                        <div class="key-insight-content">{escape(insight)}</div>
+                    </div>
+                '''
+            magazine_content += '</div>\n'
+            
+        magazine_content += '</div>\n'
+        
+        # 添加图表部分
+        if charts:
+            magazine_content += '<div class="charts-section charts-vertical">\n'
+            for chart in charts:
+                img = chart.get("img", "")
+                caption = chart.get("caption", "")
+                is_vegalite = chart.get("is_vegalite", False)
                 
-                magazine_content += f'<div class="feature-hero">\n'
+                magazine_content += '<div class="chart-container-wrapper">\n'
+                magazine_content += '<div class="chart-wrapper">\n'
                 
-                if config:
-                    chart_id = featured_chart.get("chart_id", "")
-                    is_antv = featured_chart.get("is_antv", True)
-                    
-                    # AntV G2使用div容器
-                    magazine_content += f'<div class="chart-container" id="{chart_id}"></div>\n'
-                else:
-                    # 获取相对路径
+                if is_vegalite:
+                    chart_id = chart.get("chart_id", "")
                     relative_img_path = convert_to_relative_path(img)
-                    magazine_content += f'<img src="{relative_img_path}" alt="特色图表">\n'
+                    magazine_content += f'<div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div>\n'
+                else:
+                    relative_img_path = convert_to_relative_path(img)
+                    magazine_content += f'<img src="{relative_img_path}" alt="{escape(caption)}">\n'
                 
-                magazine_content += f'<figcaption class="figure-caption">{escape(caption)}</figcaption>\n'
-                magazine_content += f'</div>\n'
-                
-                # 添加其余图表
-                if len(charts) > 1:
-                    magazine_content += '<div class="secondary-visuals">\n'
-                    for chart in charts[1:]:
-                        img = chart.get("img", "")
-                        caption = chart.get("caption", "")
-                        config = chart.get("config", "")
-                        
-                        magazine_content += f'<figure>\n'
-                        
-                        if config:
-                            chart_id = chart.get("chart_id", "")
-                            is_antv = chart.get("is_antv", True)
-                            
-                            # AntV G2使用div容器
-                            magazine_content += f'<div class="chart-container" id="{chart_id}"></div>\n'
-                        else:
-                            # 获取相对路径
-                            relative_img_path = convert_to_relative_path(img)
-                            magazine_content += f'<img src="{relative_img_path}" alt="图表">\n'
-                        
-                        magazine_content += f'<figcaption class="figure-caption">{escape(caption)}</figcaption>\n'
-                        magazine_content += f'</figure>\n'
-                    magazine_content += '</div>\n'
+                magazine_content += '</div>\n'
+                magazine_content += f'<div class="figure-caption">{escape(caption)}</div>\n'
+                magazine_content += '</div>\n'
             
-            magazine_content += '</article>'
+            magazine_content += '</div>\n'
+        
+        magazine_content += '</div>\n</article>\n'
     
-    # 添加适当的图表脚本
-    chart_script = generate_antv_script(chart_configs)
-    
-    magazine_content += chart_script
+    # 添加Vega-Lite脚本
+    chart_script = generate_vegalite_script(chart_configs)
     
     magazine_content += '''
+        </div>
+    ''' + chart_script + '''
     </body>
     </html>
     '''
@@ -1544,8 +1476,8 @@ def generate_magazine_template(sections):
 def generate_dashboard_template(sections):
     from html import escape
     
-    # 处理图表配置
-        chart_configs, chart_id_counter = prepare_antv_config(sections)
+    # 处理图表配置，使用Vega-Lite而不是AntV G2
+    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
     
     def highlight_keywords(text):
         if not text:
@@ -1587,25 +1519,27 @@ def generate_dashboard_template(sections):
         
         # 为每个图表创建仪表盘卡片
         if charts:
-            panels_html += '<div class="chart-container">\n'
+            panels_html += '<div class="charts-grid">\n'
             for chart in charts:
                 caption = chart.get("caption", "")
                 img = chart.get("img", "")
-                config = chart.get("config", "")
-                is_antv = chart.get("is_antv", True)
+                vegalite_config = chart.get("vegalite_config", "")
+                is_vegalite = chart.get("is_vegalite", False)
                 
                 panels_html += f'''
                 <div class="chart-card">
                 '''
                 
-                if config:
+                if is_vegalite:
                     chart_id = chart.get("chart_id", "")
-                        # AntV G2使用div容器
-                        panels_html += f'<div class="chart-wrapper" id="{chart_id}"></div>\n'
+                    # Vega-Lite使用div容器
+                    # 添加data-fallback属性以供回退使用
+                    relative_img_path = convert_to_relative_path(img)
+                    panels_html += f'<div class="chart-wrapper"><div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div></div>\n'
                 else:
                     # 获取相对路径
                     relative_img_path = convert_to_relative_path(img)
-                    panels_html += f'<img src="{relative_img_path}" alt="{escape(caption)}">\n'
+                    panels_html += f'<div class="chart-wrapper"><img src="{relative_img_path}" alt="{escape(caption)}"></div>\n'
                 
                 panels_html += f'<div class="chart-caption">{escape(caption)}</div>\n'
                 panels_html += '</div>\n'
@@ -1629,8 +1563,8 @@ def generate_dashboard_template(sections):
         </div>
         '''
     
-    # 生成图表脚本
-        chart_script = generate_antv_script(chart_configs)
+    # 生成Vega-Lite脚本
+    chart_script = generate_vegalite_script(chart_configs)
     
     # 构建完整的HTML
     html = f'''<!DOCTYPE html>
@@ -1638,9 +1572,8 @@ def generate_dashboard_template(sections):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>数据分析仪表盘 {' (AntV G2)'}</title>
+    <title>数据分析仪表盘 (Vega-Lite)</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@antv/g2@4.2.8/dist/g2.min.js"></script>
     <style>
         :root {{
             --bg-color: #f5f7fa;
@@ -1757,7 +1690,8 @@ def generate_dashboard_template(sections):
             padding: 1.5rem;
         }}
         
-        .chart-container {{
+        /* 修改为charts-grid，避免与chart-container冲突 */
+        .charts-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
             gap: 2rem;
@@ -1768,17 +1702,30 @@ def generate_dashboard_template(sections):
             overflow: hidden;
             background-color: white;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+        }}
+        
+        .chart-wrapper {{
+            flex: 1;
+            position: relative;
+            min-height: 350px;
+        }}
+        
+        .chart-container {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
         }}
         
         .chart-card img {{
             width: 100%;
             height: auto;
             display: block;
-        }}
-        
-        .chart-wrapper {{
-            height: 400px;
-            position: relative;
+            max-height: 400px;
+            object-fit: contain;
         }}
         
         .chart-caption {{
@@ -1786,6 +1733,7 @@ def generate_dashboard_template(sections):
             font-size: 0.875rem;
             color: var(--text-light);
             border-top: 1px solid var(--border-color);
+            background-color: #fcfcfc;
         }}
         
         .panel-footer {{
@@ -1862,15 +1810,26 @@ def generate_dashboard_template(sections):
                 padding: 1rem;
             }}
             
-            .chart-container {{
+            .charts-grid {{
                 grid-template-columns: 1fr;
             }}
+        }}
+        
+        /* Vega-Lite特定样式 */
+        .vega-embed {{
+            width: 100%;
+            height: 100%;
+        }}
+        .vega-embed .vega-actions {{
+            top: 0;
+            right: 0;
+            padding: 6px;
         }}
     </style>
 </head>
 <body>
     <div class="dashboard-header">
-        <h1 class="dashboard-title">数据分析仪表盘{' (AntV G2)'}</h1>
+        <h1 class="dashboard-title">数据分析仪表盘 (Vega-Lite)</h1>
         <div class="dashboard-controls">
             <button class="dashboard-control">导出报告</button>
             <button class="dashboard-control">刷新数据</button>
@@ -1909,5 +1868,5 @@ if __name__ == '__main__':
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html)
     
-    print(f"✅ Report generated: {output_path}")
-        print("  - Using AntV G2 for chart rendering")
+    print(f"✅ 报告已生成: {output_path}")
+    print("  - 使用Vega-Lite渲染图表")

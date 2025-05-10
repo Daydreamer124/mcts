@@ -22,7 +22,6 @@ from storyteller.algorithm.utils.unified_framework import unified_generation_fra
 import time
 from tqdm import tqdm
 import glob
-from storyteller.algorithm.utils.chart_config_extractor import ChartConfigExtractor
 
 
 
@@ -62,7 +61,7 @@ class Query2Chapters(DataStorytellingAction):
             "DATA_CONTEXT": data_context
         }
         
-        return get_prompt("Query2Chapters", prompt_args)
+        return get_prompt("Query2Chapters_test", prompt_args)
     
     def apply_chapters(self, node, action, cluster, **kwargs):
         """将章节应用到子节点"""
@@ -210,7 +209,7 @@ class Chapters2Tasks(DataStorytellingAction):
             "CHAPTERS": json.dumps(chapters_list, ensure_ascii=False)
         }
         
-        return get_prompt("Chapters2Tasks", prompt_args)
+        return get_prompt("Chapters2Tasks_test", prompt_args)
     
     def apply_tasks(self, node, action, cluster, **kwargs):
         """将任务应用到子节点"""
@@ -385,278 +384,27 @@ class Chapters2Tasks(DataStorytellingAction):
 
     def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
         """为每个章节生成多种任务方案"""
-        if self.use_unified_framework:
-            return unified_generation_framework(
-                node=node,
-                action=self,
-                llm_kwargs=llm_kwargs,
-                action_type="tasks",
-                prompt_generator=self.generate_tasks_prompt,
-                node_applier=self.apply_tasks,
-                n=3  # 生成3个不同的任务方案变体
-            )
-        else:
-            # 使用原有方法的实现（保留以便兼容）
-            children_nodes = []
-        
-        try:
-            # 获取数据集信息
-            data_context = node.report.data_context
-            
-            # 为每个章节方案创建2-3个不同的任务方案子节点
-            # 创建基础节点的多个副本
-            for variant_idx in range(3):  # 生成3个不同的任务方案变体
-                # 创建子节点
-                child_node = copy.deepcopy(node)
-                child_node.parent_node = node
-                child_node.parent_action = self
-                child_node.depth = node.depth + 1
-                
-                # 生成 LLM 提示词
-                prompt_text = get_prompt("Chapters2Tasks", {
-                    "QUERY": node.original_query,
-                    "DATA_CONTEXT": data_context,
-                    "CHAPTERS": json.dumps([{
-                        "title": getattr(chapter, 'title', f"章节{i+1}") if not isinstance(chapter, dict) else chapter.get('title', f"章节{i+1}")
-                    } for i, chapter in enumerate(child_node.report.chapters)], ensure_ascii=False)
-                })
-                
-                # 使用不同的温度，以获得更多样化的任务方案
-                llm_kwargs_temp = llm_kwargs.copy()
-                llm_kwargs_temp['temperature'] = 0.3 + variant_idx * 0.25  # 0.3, 0.55, 0.8
-                
-                print(f"\n🔄 生成任务方案变体 {variant_idx+1}/3 (温度: {llm_kwargs_temp['temperature']})")
-                
-                responses = call_openai(prompt_text, **llm_kwargs_temp)
-                if not responses:
-                    print(f"❌ 变体 {variant_idx+1} 没有收到有效响应")
-                    continue
-                
-                response_text = responses[0]
-                
-                try:
-                    # 清理响应文本，提取 JSON 部分
-                    json_text = self.extract_json_from_text(response_text)
-                    print(f"原始响应: {json_text}")
-                    
-                    # 解析 JSON
-                    response_json = json.loads(json_text)
-                    
-                    # 处理每个章节的可视化任务
-                    if "chapters" in response_json:
-                        # 创建章节标题到索引的映射
-                        chapter_title_to_index = {}
-                        for i, chapter in enumerate(child_node.report.chapters):
-                            # 安全获取标题文本
-                            if isinstance(chapter, dict):
-                                # 如果章节是字典类型
-                                if 'title' in chapter:
-                                    # 如果章节字典有'title'键
-                                    if isinstance(chapter['title'], dict):
-                                        # 如果'title'键对应的值也是字典
-                                        title_text = chapter['title'].get('title', '') or chapter['title'].get('text', f"章节{i+1}")
-                                    else:
-                                        # 如果'title'键对应的值是字符串
-                                        title_text = chapter['title']
-                                else:
-                                    # 如果章节字典没有'title'键，使用默认值
-                                    title_text = f"章节{i+1}"
-                            else:
-                                # 如果章节是对象类型
-                                title_attr = getattr(chapter, 'title', None)
-                                if isinstance(title_attr, dict):
-                                    # 如果title属性是字典
-                                    title_text = title_attr.get('title', '') or title_attr.get('text', f"章节{i+1}")
-                                else:
-                                    # 如果title属性是字符串或其他类型
-                                    title_text = title_attr if title_attr else f"章节{i+1}"
-                            
-                            # 确保title_text是字符串类型
-                            if not isinstance(title_text, str):
-                                title_text = str(title_text)
-                                
-                            # 存储小写标题文本到索引的映射
-                            chapter_title_to_index[title_text.lower()] = i
-                        
-                        # 处理每个章节
-                        for chapter_info in response_json["chapters"]:
-                            raw_title = chapter_info.get("title", "")
-                            # 调试打印
-                            #print(f"DEBUG - 获取到的 title 类型: {type(raw_title)}")
-                            #print(f"DEBUG - title 内容: {raw_title}")
-                            
-                            # 安全获取标题文本
-                            if isinstance(raw_title, dict):
-                                # 如果是字典，尝试提取文本
-                                title_text = raw_title.get('title', '') or raw_title.get('text', '')
-                            else:
-                                # 如果不是字典，直接使用
-                                title_text = raw_title
-                            
-                            # 确保title_text是字符串类型
-                            if not isinstance(title_text, str):
-                                title_text = str(title_text) if title_text is not None else ""
-                                
-                            tasks = chapter_info.get("tasks", [])
-                            
-                            # 查找匹配的章节
-                            chapter_idx = -1
-                            title_lower = title_text.lower()  # 现在可以安全调用lower()
-                            
-                            # 精确匹配
-                            if title_lower in chapter_title_to_index:
-                                chapter_idx = chapter_title_to_index[title_lower]
-                            else:
-                                # 模糊匹配
-                                for i, chapter in enumerate(child_node.report.chapters):
-                                    # 安全获取章节标题
-                                    if isinstance(chapter, dict):
-                                        if 'title' in chapter:
-                                            if isinstance(chapter['title'], dict):
-                                                search_title = chapter['title'].get('title', '') or chapter['title'].get('text', f"章节{i+1}")
-                                            else:
-                                                search_title = chapter['title']
-                                        else:
-                                            search_title = f"章节{i+1}"
-                                    else:
-                                        title_attr = getattr(chapter, 'title', None)
-                                        if isinstance(title_attr, dict):
-                                            search_title = title_attr.get('title', '') or title_attr.get('text', f"章节{i+1}")
-                                        else:
-                                            search_title = title_attr if title_attr else f"章节{i+1}"
-                                    
-                                    # 确保search_title是字符串类型
-                                    if not isinstance(search_title, str):
-                                        search_title = str(search_title)
-                                        
-                                    search_title_lower = search_title.lower()
-                                    if title_lower in search_title_lower or search_title_lower in title_lower:
-                                        chapter_idx = i
-                                        break
-                            
-                            if chapter_idx >= 0 and chapter_idx < len(child_node.report.chapters):
-                                chapter = child_node.report.chapters[chapter_idx]
-                                
-                                # 清空现有任务列表
-                                chapter.visualization_tasks = []
-                                
-                                # 添加任务
-                                for task in tasks:
-                                    task_id = task.get("task_id", "")
-                                    description = task.get("task_description", "")
-                                    chart_type = task.get("chart_type", ["Bar Chart"])
-                                    
-                                    # 创建任务对象
-                                    task_obj = {
-                                        "task_id": task_id,
-                                        "task_description": description,
-                                        "chart_type": chart_type,
-                                        "status": "pending",  # 添加状态字段
-                                        "visualization_success": False  # 添加可视化成功标志
-                                    }
-                                    
-                                    # 添加到章节的任务列表
-                                    if not hasattr(chapter, 'visualization_tasks'):
-                                        chapter.visualization_tasks = []
-                                    chapter.visualization_tasks.append(task_obj)
-                                    
-                                    # 打印任务状态
-                                    print(f"   - 任务ID: '{task_id}'")
-                                    print(f"   - 任务描述: '{description}'")
-                                    print(f"   - 图表类型: {chart_type}")
-                                    print(f"   - 状态: {task_obj.get('status')}")
-                                
-                                # 打印调试信息
-                                print(f"✅ 变体 {variant_idx+1} - 章节 {chapter_idx+1} ({chapter.title}) 生成了 {len(tasks)} 个可视化任务")
-                                print(f"当前章节任务列表: {[t.get('task_id') for t in chapter.visualization_tasks]}")
-                            else:
-                                print(f"❌ 找不到匹配的章节: {title_text}")
-                        
-                        # 检查所有章节是否都有任务
-                        all_chapters_have_tasks = True
-                        for i, chapter in enumerate(child_node.report.chapters):
-                            if not hasattr(chapter, 'visualization_tasks') or not chapter.visualization_tasks:
-                                print(f"⚠️ 变体 {variant_idx+1} - 章节 {i+1} ({chapter.title}) 没有任务")
-                                all_chapters_have_tasks = False
-                            else:
-                                print(f"✓ 变体 {variant_idx+1} - 章节 {i+1} ({chapter.title}) 有 {len(chapter.visualization_tasks)} 个任务")
-                        
-                        # 只有当所有章节都有任务时，才添加这个变体
-                        if all_chapters_have_tasks:
-                            children_nodes.append(child_node)
-                            print(f"✅ 任务方案变体 {variant_idx+1} 已添加到候选列表")
-                    
-                except json.JSONDecodeError as e:
-                    print(f"❌ JSON 解析错误: {str(e)}")
-                    print(f"⚠️ 变体 {variant_idx+1} 无法解析 JSON，跳过")
-            
-            # 如果没有生成任何有效的方案，返回原始节点的副本
-            if not children_nodes:
-                print("⚠️ 没有生成任何有效的任务方案，返回原始节点")
-                fallback_node = copy.deepcopy(node)
-                fallback_node.parent_node = node
-                fallback_node.parent_action = self
-                fallback_node.depth = node.depth + 1
-                children_nodes.append(fallback_node)
-            
-            print(f"🔢 总共生成了 {len(children_nodes)} 个有效的任务方案变体")
-            
-        except Exception as e:
-            print(f"❌ 生成可视化任务时出错: {str(e)}")
-            traceback.print_exc()
-            # 确保即使出错也返回至少一个子节点
-            if not children_nodes:
-                fallback_node = copy.deepcopy(node)
-                fallback_node.parent_node = node
-                fallback_node.parent_action = self
-                fallback_node.depth = node.depth + 1
-                children_nodes.append(fallback_node)
-        
-        # 为所有生成的节点设置正确的状态
-        for child_node in children_nodes:
-            child_node.node_type = ReportGenerationState.a2
-        
-        return children_nodes
-
-    def extract_json_from_text(self, response_text):
-        """从文本中提取 JSON 部分"""
-        try:
-            # 尝试直接解析整个响应
-            json.loads(response_text)
-            return response_text
-        except:
-            # 如果直接解析失败，尝试提取 JSON 部分
-            import re
-            
-            # 移除 markdown 代码块标记
-            response_text = re.sub(r'^```(?:json)?\s*', '', response_text)
-            response_text = re.sub(r'\s*```$', '', response_text)
-            
-            # 查找 JSON 对象
-            json_pattern = r'\{.*\}'
-            json_match = re.search(json_pattern, response_text, re.DOTALL)
-            
-            if json_match:
-                return json_match.group(0)
-            
-            return response_text
+        # 只使用统一框架的实现，移除原有的方法
+        return unified_generation_framework(
+            node=node,
+            action=self,
+            llm_kwargs=llm_kwargs,
+            action_type="tasks",
+            prompt_generator=self.generate_tasks_prompt,
+            node_applier=self.apply_tasks,
+            n=3  # 生成3个不同的任务方案变体
+        )
 
 
 
 class Tasks2Charts(DataStorytellingAction):
     def __init__(self):
         super().__init__("A3", "生成可视化")
-        # 初始化图表相似度检测工具
-        try:
-            from storyteller.algorithm.utils.ChartSimilarity import ChartSimilarity
-            self.similarity_tool = ChartSimilarity()
-            self.similarity_threshold = 0.90  # 相似度阈值
-            self.use_similarity_check = self.similarity_tool.initialized
-            print("✅ 图表相似度检测工具初始化成功")
-        except Exception as e:
-            print(f"⚠️ 图表相似度检测工具初始化失败: {str(e)}")
-            self.use_similarity_check = False
-            
+        # 保存配置参数而不是实际的对象实例
+        self.similarity_threshold = 0.90  # 相似度阈值
+        self.use_similarity_check = True  # 标记是否应该使用相似度检查
+        self.use_chart2vega = True  # 标记是否应该使用chart2vega
+
     def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
         child_node = copy.deepcopy(node)
         child_node.parent_node = node
@@ -664,8 +412,30 @@ class Tasks2Charts(DataStorytellingAction):
         child_node.depth = node.depth + 1
 
         try:
+            # 初始化图表相似度检测工具（推迟到需要使用时才创建）
+            similarity_tool = None
+            if self.use_similarity_check:
+                try:
+                    from storyteller.algorithm.utils.ChartSimilarity import ChartSimilarity
+                    similarity_tool = ChartSimilarity()
+                    print("✅ 图表相似度检测工具初始化成功")
+                except Exception as e:
+                    print(f"⚠️ 图表相似度检测工具初始化失败: {str(e)}")
+                    similarity_tool = None
+            
+            # 初始化chart2vega（推迟到需要使用时才创建）
+            chart2vega_module = None
+            if self.use_chart2vega:
+                try:
+                    from storyteller.algorithm.utils import chart2vega
+                    chart2vega_module = chart2vega
+                    print("✅ chart2vega工具初始化成功")
+                except Exception as e:
+                    print(f"⚠️ chart2vega工具初始化失败: {str(e)}")
+                    chart2vega_module = None
+            
             # 递增迭代号 - 确保每次创建新节点时迭代号加1
-            #child_node.report.current_iteration += 1
+            # child_node.report.current_iteration += 1
             current_iteration = child_node.report.current_iteration
             print(f"✅ 当前迭代号: {current_iteration}")
             
@@ -675,14 +445,10 @@ class Tasks2Charts(DataStorytellingAction):
             charts_dir = os.path.join(iteration_dir, "charts")
             os.makedirs(charts_dir, exist_ok=True)
            
-            # 创建一个额外的 JSON 配置目录
-            json_dir = os.path.join(iteration_dir, "chart_configs")
-            os.makedirs(json_dir, exist_ok=True)
+            # 新增：创建Vega-Lite配置目录
+            vegalite_dir = os.path.join(iteration_dir, "vegalite_configs")
+            os.makedirs(vegalite_dir, exist_ok=True)
             
-            # 创建一个专门存放Python代码的目录
-            code_dir = os.path.join(iteration_dir, "chart_code")
-            os.makedirs(code_dir, exist_ok=True)
-             
             # 获取数据集
             dataset_path = node.report.dataset_path
             df = pd.read_csv(dataset_path)
@@ -722,12 +488,13 @@ class Tasks2Charts(DataStorytellingAction):
                     file_name = re.sub(r'[<>:"/\\|?*]', '_', file_name)
                     chart_path = os.path.join(charts_dir, f"{file_name}.png")
 
-                    
+                    # 创建文本生成器和管理器（在局部作用域内创建，避免序列化问题）
                     from lida.datamodel import Goal, Summary
                     from lida.components.manager import Manager
-                    # 创建 Goal 对象 - 使用 description 替代 task_name
-                    #goal = Goal(question=task_id, visualization=chart_type, rationale=description) !!原先是这个
-                    goal = Goal(question=task_id, visualization=description, rationale=description)
+                    
+                    # 创建 Goal 对象
+                    goal = Goal(question=task_id, visualization=description, chart_type=chart_type)
+                    
                     # 创建 Summary 对象
                     # 读取数据摘要 JSON 文件
                     data_summary = {}
@@ -757,7 +524,6 @@ class Tasks2Charts(DataStorytellingAction):
                     )
                     
                     # 创建自定义的文本生成器
-                    #text_gen = llm(provider="openai", model="gpt-4-32k")
                     text_gen = llm(
                         provider="openai", 
                         model="gpt-4-32k"
@@ -777,72 +543,48 @@ class Tasks2Charts(DataStorytellingAction):
                     if hasattr(visualization, 'status') and visualization.status:
                         print("✓ 成功生成可视化结果")
 
-                        # 保存可视化代码到Python文件
-                        if hasattr(visualization, 'code'):
-                            # 创建代码文件路径
-                            py_file_path = os.path.join(code_dir, f"{file_name}.py")
-                            try:
-                                with open(py_file_path, 'w', encoding='utf-8') as f:
-                                    # 添加任务信息作为注释
-                                    f.write(f"'''\n")
-                                    f.write(f"任务ID: {task_id}\n")
-                                    f.write(f"任务描述: {description}\n")
-                                    f.write(f"图表类型: {chart_type}\n")
-                                    f.write(f"'''\n\n")
-                                    # 写入代码
-                                    f.write(visualization.code)
-                                print(f"✅ 可视化Python代码已保存到: {py_file_path}")
-                                
-                                # 在任务对象中添加代码路径信息
-                                task['code_path'] = py_file_path
-                            except Exception as e:
-                                print(f"⚠️ 保存可视化Python代码时出错: {str(e)}")
-
                         # 保存图表
                         if hasattr(visualization, 'savefig'):
                             visualization.savefig(chart_path)
                             print(f"✓ 图表已保存到: {chart_path}")
                             
-                            # 额外生成 Chart.js 配置 JSON 文件
+                            # 生成Vega-Lite配置
                             try:
-                                # 提取图表使用的实际数据
-                                # chart_data = self._extract_actual_data(visualization)
-                                chart_config = self._extract_chart_config(visualization, task_id, description, df)
+                                # 使用chart2vega提取Vega-Lite配置
+                                chart_config = self._extract_chart_config(visualization, task_id, description, df, llm_kwargs, chart2vega_module)
                                 
-                                # 将提取的实际数据添加到配置中
-                                #if chart_data:
-                                #    chart_config['data'] = chart_data
-                                #    print(f"✓ 成功提取图表实际数据")
-                                
-                                # 获取 JSON 配置目录
-                                json_dir = os.path.join(os.path.dirname(charts_dir), "chart_configs")
-                                os.makedirs(json_dir, exist_ok=True)
-                                
-                                # 保存 JSON 配置
-                                json_file_name = f"{file_name}.json"
-                                json_path = os.path.join(json_dir, json_file_name)
-                                with open(json_path, "w", encoding="utf-8") as f:
-                                    json.dump(chart_config, f, ensure_ascii=False, indent=2)
-                                print(f"✓ 图表配置 JSON 已保存到: {json_path}")
-                                
-                                # 保存原始Python代码和JSON配置的关联信息
-                                if hasattr(visualization, 'code'):
-                                    relation_file = os.path.join(json_dir, f"{file_name}.relation.txt")
+                                # 保存Vega-Lite配置
+                                if "vegalite_config" in chart_config and chart_config["vegalite_config"]:
+                                    vegalite_config = chart_config["vegalite_config"]
+                                    vegalite_file_name = f"{file_name}.json"
+                                    vegalite_path = os.path.join(vegalite_dir, vegalite_file_name)
+                                    
+                                    with open(vegalite_path, "w", encoding="utf-8") as f:
+                                        json.dump(vegalite_config, f, ensure_ascii=False, indent=2)
+                                    print(f"✓ Vega-Lite图表配置已保存到: {vegalite_path}")
+                                    
+                                    # 生成Vega-Lite HTML可视化
                                     try:
-                                        with open(relation_file, 'w', encoding='utf-8') as f:
-                                            f.write(f"Python代码: {os.path.join(code_dir, f'{file_name}.py')}\n")
-                                            f.write(f"JSON配置: {json_path}\n")
-                                            f.write(f"图表路径: {chart_path}\n")
-                                            f.write(f"图表类型: {chart_type}\n")
-                                            f.write(f"任务ID: {task_id}\n")
-                                            f.write(f"任务描述: {description}\n")
-                                        print(f"✓ 代码和配置关联信息已保存到: {relation_file}")
+                                        if chart2vega_module:
+                                            # 创建HTML输出目录
+                                            html_dir = os.path.join(iteration_dir, "vegalite_html")
+                                            os.makedirs(html_dir, exist_ok=True)
+                                            
+                                            # 生成HTML文件
+                                            html_path = os.path.join(html_dir, f"{file_name}.html")
+                                            
+                                            # 创建HTML查看器
+                                            chart2vega_module.create_html_viewer(vegalite_config, html_path)
+                                            print(f"✓ Vega-Lite HTML可视化已保存到: {html_path}")
                                     except Exception as e:
-                                        print(f"⚠️ 保存关联信息时出错: {str(e)}")
+                                        print(f"⚠️ 生成Vega-Lite HTML时出错: {str(e)}")
+                                        import traceback
+                                        traceback.print_exc()
                             except Exception as e:
-                                print(f"⚠️ 保存图表配置 JSON 时出错: {str(e)}")
+                                print(f"⚠️ 生成Vega-Lite配置时出错: {str(e)}")
+                                import traceback
                                 traceback.print_exc()
-                                json_path = None
+                                vegalite_path = None
                                 
                             # 额外保存图表数据为CSV，以便后续分析
                             try:
@@ -858,21 +600,12 @@ class Tasks2Charts(DataStorytellingAction):
                                 elif hasattr(visualization, 'data') and isinstance(visualization.data, pd.DataFrame):
                                     visualization.data.to_csv(csv_path, index=False)
                                     print(f"✓ 图表数据已保存到: {csv_path}")
-                                # else:
-                                    # 尝试从代码中提取和分析数据
-                                    #last_df_var = self._find_last_dataframe_variable(visualization.code)
-                                    #if last_df_var:
-                                        # 这里我们无法直接访问代码中的变量
-                                        # 所以只能保存一个指示文件，提示chart_config使用什么变量
-                                        #with open(csv_path + ".info", "w") as f:
-                                        #    f.write(f"Last DataFrame variable: {last_df_var}")
-                                        #print(f"✓ 图表数据变量信息已保存: {last_df_var}")
                             except Exception as e:
                                 print(f"⚠️ 保存图表数据 CSV 时出错: {str(e)}")
                                 traceback.print_exc()
                             
                             # 检查图表相似度
-                            if self.use_similarity_check and all_charts:
+                            if similarity_tool and all_charts:
                                 # 收集已有图表的路径列表
                                 existing_chart_paths = []
                                 for chart in all_charts:
@@ -881,7 +614,7 @@ class Tasks2Charts(DataStorytellingAction):
                                 
                                 if existing_chart_paths:
                                     # 使用batch_compare计算相似度
-                                    is_too_similar, max_similarity, similar_chart_path, all_similarities = self.similarity_tool.batch_compare(
+                                    is_too_similar, max_similarity, similar_chart_path, all_similarities = similarity_tool.batch_compare(
                                         chart_path, existing_chart_paths, self.similarity_threshold
                                     )
                                     
@@ -948,8 +681,6 @@ class Tasks2Charts(DataStorytellingAction):
                         # 存储可视化代码，以便后续修改
                         if hasattr(visualization, 'code'):
                             chart.code = visualization.code
-                            # 添加代码路径信息
-                            chart.code_path = os.path.join(code_dir, f"{file_name}.py")
                         
                         # 添加图表到章节
                         if not hasattr(chapter, 'charts'):
@@ -965,7 +696,6 @@ class Tasks2Charts(DataStorytellingAction):
                         for vis_task in chapter.visualization_tasks:
                             if vis_task.get('task_id') == task_id:
                                 vis_task['visualization_success'] = True
-                                vis_task['code_path'] = os.path.join(code_dir, f"{file_name}.py") if hasattr(visualization, 'code') else None
                                 print(f"✅ 任务 '{task_id}' 已成功完成")
                                 break
                     else:
@@ -979,28 +709,42 @@ class Tasks2Charts(DataStorytellingAction):
                                 # 新增：保存失败图表的代码（如果有）
                                 if hasattr(visualization, 'code'):
                                     # 创建失败图表目录（如果不存在）
-                                    failed_code_dir = os.path.join(code_dir, "failed")
+                                    failed_code_dir = os.path.join(charts_dir, "failed_code")
                                     os.makedirs(failed_code_dir, exist_ok=True)
                                     
                                     # 保存失败图表代码到文件
                                     code_file_path = os.path.join(failed_code_dir, f"{file_name}_failed.py")
                                     try:
                                         with open(code_file_path, 'w', encoding='utf-8') as f:
-                                            # 添加任务信息作为注释
-                                            f.write(f"'''\n")
-                                            f.write(f"任务ID: {task_id}\n")
-                                            f.write(f"任务描述: {description}\n")
-                                            f.write(f"图表类型: {chart_type}\n")
-                                            f.write(f"状态: 失败\n")
-                                            f.write(f"'''\n\n")
-                                            # 写入代码
                                             f.write(visualization.code)
                                         print(f"✅ 已保存失败图表代码到: {code_file_path}")
                                         
                                         # 在任务中记录代码路径
                                         vis_task['failed_code_path'] = code_file_path
+                                        
+                                        # 新增: 即使图表生成失败，也创建图表对象并添加到章节中
+                                        # 使用临时的占位图片路径或者特殊标记表示这是失败的图表
+                                        placeholder_chart = Chart(
+                                            url=code_file_path,  # 使用代码文件作为URL（这只是一个标识符）
+                                            caption="",
+                                            chart_type=chart_type,
+                                            task_id=task_id
+                                        )
+                                        
+                                        # 添加代码和失败标记
+                                        placeholder_chart.code = visualization.code
+                                        placeholder_chart.generation_failed = True  # 添加失败标记
+                                        
+                                        # 添加图表到章节
+                                        if not hasattr(chapter, 'charts'):
+                                            chapter.charts = []
+                                        
+                                        chapter.charts.append(placeholder_chart)
+                                        all_charts.append(placeholder_chart)
+                                        print(f"✅ 已添加失败图表占位符到章节，以便后续修复")
+                                        
                                     except Exception as e:
-                                        print(f"❌ 保存失败图表代码时出错: {str(e)}")
+                                        print(f"❌ 保存失败图表代码或创建占位图表时出错: {str(e)}")
                                 
                                 print(f"⚠️ 任务 '{description}' 虽然失败但已标记为已完成，避免无限循环")
                                 break
@@ -1016,19 +760,25 @@ class Tasks2Charts(DataStorytellingAction):
             return [child_node]
 
 
-    def _extract_chart_config(self, visualization, task_id, description, df):
-        """从可视化代码中提取图表配置
+    def _extract_chart_config(self, visualization, task_id, description, df, llm_kwargs=None, chart2vega_module=None):
+        """从可视化代码中提取图表配置，只使用chart2vega转换为Vega-Lite
         
         参数:
-            visualization: 包含可视化代码的字典
+            visualization: 包含可视化代码的对象
             task_id: 任务ID
             description: 任务描述
             df: 数据DataFrame
+            llm_kwargs: LLM调用参数
+            chart2vega_module: chart2vega模块的实例
             
         返回:
-            图表配置字典
+            包含vegalite_config的配置字典
         """
-        chart_config = {}
+        # 初始化空配置
+        result_config = {
+            "title": description or "Chart",
+            "vegalite_config": None
+        }
         
         try:
             # 确保有可视化代码
@@ -1041,71 +791,93 @@ class Tasks2Charts(DataStorytellingAction):
             print(code)
             print("-" * 50)
             
-            # 打印DataFrame信息，帮助理解数据结构
-            print("\n📊 DataFrame信息:")
-            print(f"形状: {df.shape}")
-            print(f"列名: {df.columns.tolist()}")
-            print(f"数据类型:\n{df.dtypes}")
-            print("\n前5行数据:")
-            print(df.head(5).to_string())
-            print("-" * 50)
-            
-            # 获取数据上下文信息
-            data_context = None
-            try:
-                # 尝试读取数据摘要JSON文件
-                json_path = os.path.join("storyteller", "dataset", "data_context.json")
-                if os.path.exists(json_path):
-                    with open(json_path, 'r', encoding='utf-8') as f:
-                        data_summary = json.load(f)
-                        data_context = data_summary.get("dataset_description", "")
-                        print(f"✅ 从JSON文件读取到数据上下文: {data_context[:100]}...")
-            except Exception as e:
-                print(f"⚠️ 读取数据上下文时出错: {str(e)}")
-            
-            # 创建提取器并解析代码
-            extractor = ChartConfigExtractor()
-            config = extractor.extract_from_code(code)
-            
-            # 如果解析失败，返回空配置
-            if not config:
-                print(f"⚠️ LLM解析失败")
-                return {}
-            
-            # 提取配置并处理数据
+            # 使用chart2vega直接将Python代码转换为Vega-Lite配置
+            if chart2vega_module:
                 try:
-                chart_data = extractor.resolve_chart_data(df, config)
-                print(f"✓ 使用resolve_chart_data方法生成图表数据")
+                    print("\n🚀 使用chart2vega工具生成Vega-Lite配置...")
+                    
+                    # 确保llm_kwargs参数正确传递
+                    if llm_kwargs is None:
+                        llm_kwargs = {}
+                    else:
+                        # 创建副本以避免修改原始对象
+                        llm_kwargs = llm_kwargs.copy()
+                    
+                    # 添加或确保设置了合适的模型
+                    if not llm_kwargs.get("model"):
+                        llm_kwargs["model"] = "gpt-4-turbo"
+                    
+                    # 确保API调用参数正确
+                    # 检查是否有base_url，如果没有设置，尝试从环境变量获取
+                    if not llm_kwargs.get("base_url"):
+                        env_base_url = os.environ.get("OPENAI_BASE_URL")
+                        if env_base_url:
+                            llm_kwargs["base_url"] = env_base_url
+                    
+                    # 检查是否有api_key，如果没有则尝试从环境变量获取
+                    if not llm_kwargs.get("api_key"):
+                        env_api_key = os.environ.get("OPENAI_API_KEY")
+                        if env_api_key:
+                            llm_kwargs["api_key"] = env_api_key
+                    
+                    # 添加重试逻辑
+                    max_retries = 2
+                    vegalite_config = None
+                    
+                    for retry in range(max_retries):
+                        try:
+                            if retry > 0:
+                                print(f"⚠️ 第 {retry+1} 次尝试调用chart2vega...")
+                                
+                            vegalite_config = chart2vega_module.convert_python_to_vegalite(code, llm_kwargs=llm_kwargs)
+                            
+                            if vegalite_config:
+                                print("✅ 成功使用LLM直接转换代码为Vega-Lite配置")
+                                break
+                            else:
+                                print(f"⚠️ 第 {retry+1} 次尝试失败")
+                        except Exception as e:
+                            print(f"⚠️ 第 {retry+1} 次尝试时出错: {str(e)}")
+                            
+                            if retry < max_retries - 1:
+                                print("⚠️ 稍后重试...")
+                                time.sleep(1)  # 短暂延迟再重试
+                    
+                    # 检查是否成功获取了Vega-Lite配置
+                    if vegalite_config:
+                        # 确保设置标题
+                        if isinstance(vegalite_config, dict) and (not vegalite_config.get("title") or vegalite_config["title"] == "Chart"):
+                            vegalite_config["title"] = description
+                            
+                        # 保存vegalite_config到结果
+                        result_config["vegalite_config"] = vegalite_config
+                        
+                        # 输出配置信息
+                        print(f"\n✓ 成功生成Vega-Lite配置:")
+                        if isinstance(vegalite_config.get("mark"), dict):
+                            print(f"- 图表类型: {vegalite_config.get('mark', {}).get('type', '')}")
+                        else:
+                            print(f"- 图表类型: {vegalite_config.get('mark', '')}")
+                        print(f"- 图表标题: {vegalite_config.get('title', '')}")
+                        
+                        if 'encoding' in vegalite_config:
+                            encoding = vegalite_config.get('encoding', {})
+                            print(f"- X轴字段: {encoding.get('x', {}).get('field', '')}")
+                            print(f"- Y轴字段: {encoding.get('y', {}).get('field', '')}")
+                    else:
+                        print("⚠️ LLM转换Vega-Lite配置失败")
+                        
                 except Exception as e:
-                    print(f"⚠️ 使用resolve_chart_data方法时出错: {e}")
-                    chart_data = None
-            
-            # 转换为AntV G2配置
-            chart_config = extractor.convert_to_antv_config(config, chart_data)
-            
-            # 设置标题
-            if not chart_config.get("title") or chart_config["title"] == "Chart":
-                chart_config["title"] = description
-            
-            # 输出配置信息
-                print(f"\n✓ 成功生成AntV G2配置:")
-            print(f"- 图表类型: {chart_config.get('type', '')}")
-            print(f"- 图表标题: {chart_config.get('title', '')}")
-            print(f"- X轴字段: {chart_config.get('xField', '')}")
-            print(f"- Y轴字段: {chart_config.get('yField', '')}")
-            if 'data' in chart_config:
-                print(f"- 数据点数量: {len(chart_config['data'])}")
-                series_field = chart_config.get('seriesField', None)
-                if series_field:
-                    print(f"- 分组字段: {series_field}")
-                    print(f"- 是否堆叠: {'是' if chart_config.get('isStack', False) else '否'}")
+                    print(f"⚠️ 使用chart2vega时出错: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
             
         except Exception as e:
             print(f"⚠️ 提取图表配置时出错: {str(e)}")
             import traceback
             traceback.print_exc()
         
-        return chart_config
+        return result_config
 
 class ReviseVis(DataStorytellingAction):
     def __init__(self):
@@ -1166,11 +938,11 @@ class ReviseVis(DataStorytellingAction):
                         # 读取数据
                         df = pd.read_csv(dataset_path)
                         
-                        # 创建 LIDA 管理器
+                        # 在方法内创建LIDA管理器和文本生成器（局部变量）
                         from lida.components.manager import Manager
                         from lida.datamodel import Summary
                         
-                        # 创建自定义的文本生成器
+                        # 创建自定义的文本生成器（作为局部变量）
                         text_gen = llm(provider="openai", model="gpt-4o")
                         manager = Manager(text_gen=text_gen)
                         
@@ -1201,12 +973,49 @@ class ReviseVis(DataStorytellingAction):
                             fields=[info.get("dtype", "unknown") for info in data_summary.get("fields_info", {}).values()] if "fields_info" in data_summary else [str(dtype) for dtype in df.dtypes.tolist()]
                         )
                         
-                        # 生成编辑指令
-                        edit_instruction = "修改图表错误，比如修改为更合适的图表类型，让图表更加美观，清晰"
-                        #print(f"生成的编辑指令: {edit_instruction}")
+                        # 检查任务描述和图表代码，决定是否需要生成表格而不是图表
+                        chart_generation_failed = getattr(selected_chart, 'generation_failed', False)
                         
-                        # 使用 LIDA 的 edit 功能修改图表
-                        print(f"正在修改任务 '{description}' 的图表...")
+                        # 判断是否需要将图表转换为表格
+                        # 如果图表生成失败，或有其他标记指示应该使用表格
+                        if chart_generation_failed:
+                            print(f"📊 检测到图表生成失败，尝试生成表格形式展示数据")
+                            edit_instruction = f"""
+                            请将这个失败的可视化代码转换为生成表格的代码。原始任务描述是: '{description}'
+                            
+                            请遵循以下指导:
+                            1. 仔细分析原始任务描述，确保表格能够展示与原任务相同的数据关系和对比
+                                - 分析任务想要展示的变量关系（例如，若要比较两组数据，表格应包含这两组的对比）
+                                - 明确任务中的X轴和Y轴变量，并确保这些变量在表格中有明确的列
+                                - 保留任务中要求的聚合方式（平均值、总和、计数等）
+                             
+                            2. 数据处理部分:
+                                - 保留原代码中的关键数据筛选、分组和聚合操作
+                                - 如果任务需要比较多个类别或组，确保所有类别都在表格中
+                             
+                            3. 表格设计：
+                                - 为表格创建清晰的行和列标签，与原任务的X轴/Y轴命名保持一致
+                                - 限制表格中的数据行数（最多显示15行关键数据）
+                                - 对数值进行适当的格式化（例如保留2位小数）
+                                - 如果原任务是比较不同类别，可以添加百分比差异列
+                             
+                            4. 表格样式:
+                                - 使用matplotlib的plt.table()创建表格
+                                - 调整表格颜色和样式，提高可读性和美观度
+                                - 根据数据类型设置合适的单元格颜色（例如使用颜色深浅表示数值大小）
+                             
+                            5. 元数据:
+                                - 使用原始任务的标题，并在标题中注明这是表格形式
+                             
+                            主要目标是确保表格形式能够完整展现原始可视化任务想要传达的数据洞察和关系。
+                            最终输出应该是能够直接保存为PNG的matplotlib图像。
+                            """
+                        else:
+                            # 如果不是生成表格，使用普通的图表修改指令
+                            edit_instruction = "修改图表错误，比如修改为更合适的图表类型，让图表更加美观，清晰"
+                        
+                        # 使用 LIDA 的 edit 功能修改图表/生成表格
+                        print(f"正在为任务 '{description}' 生成{'表格' if chart_generation_failed else '图表'}...")
                         edited_visualization = manager.edit(
                             code=selected_chart.code,
                             summary=summary,
@@ -1216,111 +1025,120 @@ class ReviseVis(DataStorytellingAction):
                         
                         # 处理编辑后的可视化结果
                         if edited_visualization is None:
-                            print("✗ 编辑可视化图表失败: 返回结果为None")
+                            print(f"✗ 生成{'表格' if chart_generation_failed else '图表'}失败: 返回结果为None")
                         elif isinstance(edited_visualization, list) and len(edited_visualization) > 0:
                             edited_visualization = edited_visualization[0]
-                            print("✓ 使用第一个编辑结果进行处理")
+                            print(f"✓ 使用第一个编辑结果进行处理")
                         
                         # 检查是否为有效的编辑结果
                         if hasattr(edited_visualization, 'status') and edited_visualization.status:
-                            print("✓ 成功修改可视化图表")
+                            print(f"✓ 成功生成{'表格' if chart_generation_failed else '图表'}")
                             
                             # 找到当前图表所在的迭代目录
                             original_chart_path = selected_chart.url
                             chart_dir = os.path.dirname(original_chart_path)
                             
                             # 将修改后的图表保存到同一目录下
-                            edited_chart_name = f"{task_id}_edited.png"
+                            suffix = "_table" if chart_generation_failed else "_edited"
+                            edited_chart_name = f"{task_id}{suffix}.png"
                             edited_chart_path = os.path.join(chart_dir, edited_chart_name)
                             
-                            # 保存修改后的图表
+                            # 保存修改后的图表或表格
                             if hasattr(edited_visualization, 'savefig'):
                                 edited_visualization.savefig(edited_chart_path)
-                                print(f"✓ 修改后的图表已保存到: {edited_chart_path}")
+                                print(f"✓ {'表格' if chart_generation_failed else '图表'}已保存到: {edited_chart_path}")
 
-                                
-                                # 额外生成 Chart.js 配置 JSON 文件
-                                try:
-                                    # 借用 Tasks2Charts 类中的方法来提取图表配置
-                                    from storyteller.algorithm.mcts_action import Tasks2Charts
-                                    tasks2charts = Tasks2Charts()
-                                    
-                                    # 提取图表使用的实际数据
-                                    chart_data = tasks2charts._extract_actual_data(edited_visualization)
-                                    chart_config = tasks2charts._extract_chart_config(edited_visualization, task_id, description, df)
-                                    
-                                    # 将提取的实际数据添加到配置中
-                                    if chart_data:
-                                        chart_config['data'] = chart_data
-                                        print(f"✓ 成功提取图表实际数据")
-                                    
-                                    # 获取 JSON 配置目录
-                                    json_dir = os.path.join(os.path.dirname(chart_dir), "chart_configs")
-                                    os.makedirs(json_dir, exist_ok=True)
-                                    
-                                    # 保存 JSON 配置
-                                    json_file_name = f"{task_id}_edited.json"
-                                    json_path = os.path.join(json_dir, json_file_name)
-                                    with open(json_path, "w", encoding="utf-8") as f:
-                                        json.dump(chart_config, f, ensure_ascii=False, indent=2)
-                                    print(f"✓ 图表配置 JSON 已保存到: {json_path}")
-                                    
-                                    # 额外保存图表数据为CSV，以便后续分析
+                                # 生成Vega-Lite配置 (仅对图表执行，表格跳过)
+                                if not chart_generation_failed:
                                     try:
-                                        csv_dir = os.path.join(os.path.dirname(chart_dir), "chart_data")
-                                        os.makedirs(csv_dir, exist_ok=True)
-                                        csv_file_name = f"{task_id}_edited.csv"
-                                        csv_path = os.path.join(csv_dir, csv_file_name)
+                                        # 直接使用提取配置的逻辑，而不是实例化Tasks2Charts
+                                        chart_config = self._extract_chart_config(edited_visualization, task_id, description, df, llm_kwargs)
                                         
-                                        # 尝试从可视化对象中提取实际使用的数据
-                                        if hasattr(edited_visualization, '_data') and isinstance(edited_visualization._data, pd.DataFrame):
-                                            edited_visualization._data.to_csv(csv_path, index=False)
-                                            print(f"✓ 修改后的图表数据已保存到: {csv_path}")
-                                        elif hasattr(edited_visualization, 'data') and isinstance(edited_visualization.data, pd.DataFrame):
-                                            edited_visualization.data.to_csv(csv_path, index=False)
-                                            print(f"✓ 修改后的图表数据已保存到: {csv_path}")
-                                        # else:
-                                            # 尝试从代码中提取和分析数据
-                                            #last_df_var = tasks2charts._find_last_dataframe_variable(edited_visualization.code)
-                                            #if last_df_var:
-                                                # 这里我们无法直接访问代码中的变量
-                                                # 所以只能保存一个指示文件，提示chart_config使用什么变量
-                                                #with open(csv_path + ".info", "w") as f:
-                                                #    f.write(f"Last DataFrame variable: {last_df_var}")
-                                                #print(f"✓ 修改后的图表数据变量信息已保存: {last_df_var}")
+                                        # 保存Vega-Lite配置
+                                        if "vegalite_config" in chart_config and chart_config["vegalite_config"]:
+                                            vegalite_config = chart_config["vegalite_config"]
+                                            
+                                            # 获取Vega-Lite配置目录
+                                            vegalite_dir = os.path.join(os.path.dirname(chart_dir), "vegalite_configs")
+                                            os.makedirs(vegalite_dir, exist_ok=True)
+                                            
+                                            # 保存Vega-Lite配置
+                                            vegalite_file_name = f"{task_id}_edited.json"
+                                            vegalite_path = os.path.join(vegalite_dir, vegalite_file_name)
+                                            
+                                            with open(vegalite_path, "w", encoding="utf-8") as f:
+                                                json.dump(vegalite_config, f, ensure_ascii=False, indent=2)
+                                            print(f"✓ Vega-Lite图表配置已保存到: {vegalite_path}")
+                                            
+                                            # 生成HTML查看器
+                                            try:
+                                                # 导入chart2vega（局部导入）
+                                                from storyteller.algorithm.utils import chart2vega
+                                                
+                                                # 创建HTML输出目录
+                                                html_dir = os.path.join(os.path.dirname(chart_dir), "vegalite_html")
+                                                os.makedirs(html_dir, exist_ok=True)
+                                                
+                                                # 生成HTML文件
+                                                html_path = os.path.join(html_dir, f"{task_id}_edited.html")
+                                                
+                                                # 创建HTML查看器
+                                                chart2vega.create_html_viewer(vegalite_config, html_path)
+                                                print(f"✓ Vega-Lite HTML可视化已保存到: {html_path}")
+                                            except Exception as e:
+                                                print(f"⚠️ 生成HTML查看器时出错: {str(e)}")
+                                                traceback.print_exc()
                                     except Exception as e:
-                                        print(f"⚠️ 保存修改后的图表数据 CSV 时出错: {str(e)}")
+                                        print(f"⚠️ 生成Vega-Lite配置时出错: {str(e)}")
+                                        import traceback
                                         traceback.print_exc()
+                                
+                                # 额外保存图表数据为CSV，以便后续分析
+                                try:
+                                    csv_dir = os.path.join(os.path.dirname(chart_dir), "chart_data")
+                                    os.makedirs(csv_dir, exist_ok=True)
+                                    csv_file_name = f"{task_id}{suffix}.csv"
+                                    csv_path = os.path.join(csv_dir, csv_file_name)
+                                    
+                                    # 尝试从可视化对象中提取实际使用的数据
+                                    if hasattr(edited_visualization, '_data') and isinstance(edited_visualization._data, pd.DataFrame):
+                                        edited_visualization._data.to_csv(csv_path, index=False)
+                                        print(f"✓ {'表格' if chart_generation_failed else '图表'}数据已保存到: {csv_path}")
+                                    elif hasattr(edited_visualization, 'data') and isinstance(edited_visualization.data, pd.DataFrame):
+                                        edited_visualization.data.to_csv(csv_path, index=False)
+                                        print(f"✓ {'表格' if chart_generation_failed else '图表'}数据已保存到: {csv_path}")
                                 except Exception as e:
-                                    print(f"⚠️ 保存图表配置 JSON 时出错: {str(e)}")
+                                    print(f"⚠️ 保存{'表格' if chart_generation_failed else '图表'}数据 CSV 时出错: {str(e)}")
                                     traceback.print_exc()
-                                    json_path = None
 
                             # 创建新的图表对象
                             from storyteller.algorithm.mcts_node import Chart
                             edited_chart = Chart(
                                 url=edited_chart_path,
                                 caption="",  # 使用空字符串作为初始说明
-                                chart_type=selected_chart.chart_type,
+                                chart_type="table" if chart_generation_failed else selected_chart.chart_type,
                                 task_id=task_id  # 使用原始任务ID/描述
                             )
                             edited_chart.needs_caption = True  # 设置需要生成说明文字的标志
-                           
-                            # 添加JSON配置路径属性
-                            if 'json_path' in locals() and json_path:
-                                edited_chart.json_config_path = json_path
-                                print(f"- JSON 配置路径: {json_path}")
-                                                        
+                            edited_chart.is_table = chart_generation_failed  # 标记是否为表格
+                            
                             # 更新章节中的图表
                             for i, c in enumerate(chapter.charts):
                                 if hasattr(c, 'task_id') and c.task_id == task_id:
                                     chapter.charts[i] = edited_chart
+                                    # 更新任务状态为成功
+                                    for vis_task in chapter.visualization_tasks:
+                                        if vis_task.get('task_id') == task_id:
+                                            vis_task['visualization_success'] = True
+                                            vis_task['converted_to_table'] = chart_generation_failed
+                                            print(f"✅ 更新任务 '{task_id}' 状态为成功生成{'表格' if chart_generation_failed else '图表'}")
+                                            break
                                     break
                         else:
                             error_msg = edited_visualization.error if hasattr(edited_visualization, 'error') else "未知错误"
-                            print(f"✗ 修改可视化图表失败: {error_msg}")
+                            print(f"✗ 生成{'表格' if chart_generation_failed else '图表'}失败: {error_msg}")
                     except Exception as e:
-                        print(f"✗ 修改可视化图表时发生错误: {str(e)}")
+                        print(f"✗ 为任务 '{task_id}' 生成{'表格' if getattr(selected_chart, 'generation_failed', False) else '图表'}时发生错误: {str(e)}")
                         import traceback
                         traceback.print_exc()
             
@@ -1336,7 +1154,124 @@ class ReviseVis(DataStorytellingAction):
             child_node.node_type = ReportGenerationState.a4
             return [child_node]
    
- 
+    def _extract_chart_config(self, visualization, task_id, description, df, llm_kwargs=None):
+        """从可视化代码中提取图表配置，转换为Vega-Lite
+        
+        参数:
+            visualization: 包含可视化代码的对象
+            task_id: 任务ID
+            description: 任务描述
+            df: 数据DataFrame
+            llm_kwargs: LLM调用参数
+            
+        返回:
+            包含vegalite_config的配置字典
+        """
+        # 初始化空配置
+        result_config = {
+            "title": description or "Chart",
+            "vegalite_config": None
+        }
+        
+        try:
+            # 确保有可视化代码
+            if not hasattr(visualization, 'code'):
+                raise ValueError("可视化对象没有代码属性")
+            
+            code = visualization.code
+            print("\n📋 分析可视化代码:")
+            print("-" * 50)
+            print(code)
+            print("-" * 50)
+            
+            # 导入chart2vega（局部导入）
+            try:
+                from storyteller.algorithm.utils import chart2vega
+                print("\n🚀 使用chart2vega工具生成Vega-Lite配置...")
+                
+                # 确保llm_kwargs参数正确传递
+                if llm_kwargs is None:
+                    llm_kwargs = {}
+                else:
+                    # 创建副本以避免修改原始对象
+                    llm_kwargs = llm_kwargs.copy()
+                
+                # 添加或确保设置了合适的模型
+                if not llm_kwargs.get("model"):
+                    llm_kwargs["model"] = "gpt-4-turbo"
+                
+                # 检查是否有base_url，如果没有设置，尝试从环境变量获取
+                if not llm_kwargs.get("base_url"):
+                    env_base_url = os.environ.get("OPENAI_BASE_URL")
+                    if env_base_url:
+                        llm_kwargs["base_url"] = env_base_url
+                
+                # 检查是否有api_key，如果没有则尝试从环境变量获取
+                if not llm_kwargs.get("api_key"):
+                    env_api_key = os.environ.get("OPENAI_API_KEY")
+                    if env_api_key:
+                        llm_kwargs["api_key"] = env_api_key
+                
+                # 添加重试逻辑
+                max_retries = 2
+                vegalite_config = None
+                
+                for retry in range(max_retries):
+                    try:
+                        if retry > 0:
+                            print(f"⚠️ 第 {retry+1} 次尝试调用chart2vega...")
+                            
+                        vegalite_config = chart2vega.convert_python_to_vegalite(code, llm_kwargs=llm_kwargs)
+                        
+                        if vegalite_config:
+                            print("✅ 成功使用LLM直接转换代码为Vega-Lite配置")
+                            break
+                        else:
+                            print(f"⚠️ 第 {retry+1} 次尝试失败")
+                        
+                    except Exception as e:
+                        print(f"⚠️ 第 {retry+1} 次尝试时出错: {str(e)}")
+                        
+                        if retry < max_retries - 1:
+                            print("⚠️ 稍后重试...")
+                            time.sleep(1)  # 短暂延迟再重试
+                
+                # 检查是否成功获取了Vega-Lite配置
+                if vegalite_config:
+                    # 确保设置标题
+                    if isinstance(vegalite_config, dict) and (not vegalite_config.get("title") or vegalite_config["title"] == "Chart"):
+                        vegalite_config["title"] = description
+                        
+                    # 保存vegalite_config到结果
+                    result_config["vegalite_config"] = vegalite_config
+                    
+                    # 输出配置信息
+                    print(f"\n✓ 成功生成Vega-Lite配置:")
+                    if isinstance(vegalite_config.get("mark"), dict):
+                        print(f"- 图表类型: {vegalite_config.get('mark', {}).get('type', '')}")
+                    else:
+                        print(f"- 图表类型: {vegalite_config.get('mark', '')}")
+                    print(f"- 图表标题: {vegalite_config.get('title', '')}")
+                    
+                    if 'encoding' in vegalite_config:
+                        encoding = vegalite_config.get('encoding', {})
+                        print(f"- X轴字段: {encoding.get('x', {}).get('field', '')}")
+                        print(f"- Y轴字段: {encoding.get('y', {}).get('field', '')}")
+                else:
+                    print("⚠️ LLM转换Vega-Lite配置失败")
+                    
+                        
+            except Exception as e:
+                print(f"⚠️ 使用chart2vega时出错: {str(e)}")
+                import traceback
+                traceback.print_exc()
+            
+        except Exception as e:
+            print(f"⚠️ 提取图表配置时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        return result_config
 
 class Charts2Captions(DataStorytellingAction):
     def __init__(self):
@@ -1405,8 +1340,7 @@ class Charts2Captions(DataStorytellingAction):
         ]
         
         # 设置API调用参数
-        #model = kwargs.get("model", "gpt-4o")
-        model = "gpt-4-turbo"
+        model = "gpt-4-turbo"  # 使用固定模型，而不是从kwargs中获取
         temperature = kwargs.get("temperature", 0.7)
         max_tokens = kwargs.get("max_tokens", 4096)
         
@@ -1421,8 +1355,18 @@ class Charts2Captions(DataStorytellingAction):
         
         # 调用API
         try:
-            response = requests.post(url, headers=headers, data=json.dumps(data))
+            # 创建本地会话对象，而不是使用全局会话
+            session = requests.Session()
+            
+            # 设置超时
+            timeout = kwargs.get("timeout", 60)
+            
+            # 发送请求
+            response = session.post(url, headers=headers, json=data, timeout=timeout)
             response_json = response.json()
+            
+            # 关闭会话
+            session.close()
             
             if 'choices' in response_json and response_json['choices']:
                 return response_json['choices'][0]['message']['content'].strip()
@@ -1681,49 +1625,59 @@ class Charts2Captions(DataStorytellingAction):
         
         # 策略：所有章节使用同一套方案编号（全部用方案1，全部用方案2...）
         for scheme_idx in range(min(max_schemes, max_nodes)):
-            child_node = copy.deepcopy(node)
-            child_node.parent_node = node
-            child_node.parent_action = self
-            child_node.depth = node.depth + 1
-            child_node.node_type = ReportGenerationState.a5
-            
-            caption_applied = False  # 跟踪是否应用了任何说明
-            
-            # 对每个章节应用相同编号的方案
-            for chapter_data in all_chapter_schemes:
-                chapter_idx = chapter_data["chapter_idx"]
-                schemes = chapter_data["schemes"]
+            try:
+                # 在 try 块中进行深拷贝操作，捕获可能的序列化错误
+                child_node = copy.deepcopy(node)
+                child_node.parent_node = node
+                child_node.parent_action = self
+                child_node.depth = node.depth + 1
+                child_node.node_type = ReportGenerationState.a5
                 
-                # 如果此章节有对应编号的方案
-                if 0 <= scheme_idx < len(schemes):
-                    scheme = schemes[scheme_idx]
-                    chapter = child_node.report.chapters[chapter_idx]
+                caption_applied = False  # 跟踪是否应用了任何说明
+                
+                # 对每个章节应用相同编号的方案
+                for chapter_data in all_chapter_schemes:
+                    chapter_idx = chapter_data["chapter_idx"]
+                    schemes = chapter_data["schemes"]
                     
-                    print(f"🔄 为子节点{scheme_idx+1}应用章节{chapter_idx+1}的方案{scheme.get('scheme_id', scheme_idx+1)}")
-                    
-                    # 应用此方案中的所有图表说明
-                    for caption_info in scheme.get("captions", []):
-                        chart_idx = caption_info.get("chart_idx")
-                        caption = caption_info.get("caption", "")
+                    # 如果此章节有对应编号的方案
+                    if 0 <= scheme_idx < len(schemes):
+                        scheme = schemes[scheme_idx]
                         
-                    if hasattr(chapter, 'charts') and 0 <= chart_idx < len(chapter.charts):
-                        chart = chapter.charts[chart_idx]
-                        chart.caption = caption
-                        chart.needs_caption = False
-                        caption_applied = True
+                        # 安全地获取章节
+                        if 0 <= chapter_idx < len(child_node.report.chapters):
+                            chapter = child_node.report.chapters[chapter_idx]
                             
-                            # 更新任务状态
-                        if hasattr(chapter, 'visualization_tasks'):
-                            for task in chapter.visualization_tasks:
-                                if task.get('task_id') == chart.task_id:
-                                    task['status'] = 'completed'
-                                    task['caption_generated'] = True
-                                    break
+                            print(f"🔄 为子节点{scheme_idx+1}应用章节{chapter_idx+1}的方案{scheme.get('scheme_id', scheme_idx+1)}")
                             
-            if caption_applied:  # 只有当应用了说明时才添加节点
-                child_node.caption_strategy = f"统一方案{scheme_idx+1}"
-                children_nodes.append(child_node)
-                print(f"✅ 成功创建子节点 {scheme_idx+1}，使用统一方案 {scheme_idx+1}")
+                            # 应用此方案中的所有图表说明
+                            for caption_info in scheme.get("captions", []):
+                                chart_idx = caption_info.get("chart_idx")
+                                caption = caption_info.get("caption", "")
+                                
+                                if hasattr(chapter, 'charts') and 0 <= chart_idx < len(chapter.charts):
+                                    chart = chapter.charts[chart_idx]
+                                    chart.caption = caption
+                                    chart.needs_caption = False
+                                    caption_applied = True
+                                    
+                                    # 更新任务状态
+                                    if hasattr(chapter, 'visualization_tasks'):
+                                        for task in chapter.visualization_tasks:
+                                            if task.get('task_id') == chart.task_id:
+                                                task['status'] = 'completed'
+                                                task['caption_generated'] = True
+                                                break
+                
+                if caption_applied:  # 只有当应用了说明时才添加节点
+                    child_node.caption_strategy = f"统一方案{scheme_idx+1}"
+                    children_nodes.append(child_node)
+                    print(f"✅ 成功创建子节点 {scheme_idx+1}，使用统一方案 {scheme_idx+1}")
+
+            except Exception as e:
+                print(f"❌ 创建方案 {scheme_idx+1} 的子节点时出错: {str(e)}")
+                traceback.print_exc()
+                continue
         
         return children_nodes
 

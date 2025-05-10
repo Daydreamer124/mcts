@@ -21,6 +21,7 @@ from storyteller.algorithm.utils.universalsc import run_universal_self_consisten
 from storyteller.algorithm.utils.unified_framework import unified_generation_framework  # 导入统一框架
 import time
 from tqdm import tqdm
+import glob
 
 
 
@@ -60,7 +61,7 @@ class Query2Chapters(DataStorytellingAction):
             "DATA_CONTEXT": data_context
         }
         
-        return get_prompt("Query2Chapters", prompt_args)
+        return get_prompt("Query2Chapters_test", prompt_args)
     
     def apply_chapters(self, node, action, cluster, **kwargs):
         """将章节应用到子节点"""
@@ -199,7 +200,7 @@ class Chapters2Tasks(DataStorytellingAction):
                     # 如果title属性是字符串或其他类型
                     title_text = title_attr if title_attr else f"章节{i+1}"
             
-            chapters_list.append({"title": title_text})
+            chapters_list.append(title_text)
         
         # 生成 LLM 提示词
         prompt_args = {
@@ -208,7 +209,7 @@ class Chapters2Tasks(DataStorytellingAction):
             "CHAPTERS": json.dumps(chapters_list, ensure_ascii=False)
         }
         
-        return get_prompt("Chapters2Tasks", prompt_args)
+        return get_prompt("Chapters2Tasks_test", prompt_args)
     
     def apply_tasks(self, node, action, cluster, **kwargs):
         """将任务应用到子节点"""
@@ -397,218 +398,218 @@ class Chapters2Tasks(DataStorytellingAction):
             # 使用原有方法的实现（保留以便兼容）
             children_nodes = []
         
-        try:
-            # 获取数据集信息
-            data_context = node.report.data_context
-            
-            # 为每个章节方案创建2-3个不同的任务方案子节点
-            # 创建基础节点的多个副本
-            for variant_idx in range(3):  # 生成3个不同的任务方案变体
-                # 创建子节点
-                child_node = copy.deepcopy(node)
-                child_node.parent_node = node
-                child_node.parent_action = self
-                child_node.depth = node.depth + 1
+            try:
+                # 获取数据集信息
+                data_context = node.report.data_context
                 
-                # 生成 LLM 提示词
-                prompt_text = get_prompt("Chapters2Tasks", {
-                    "QUERY": node.original_query,
-                    "DATA_CONTEXT": data_context,
-                    "CHAPTERS": json.dumps([{
-                        "title": getattr(chapter, 'title', f"章节{i+1}") if not isinstance(chapter, dict) else chapter.get('title', f"章节{i+1}")
-                    } for i, chapter in enumerate(child_node.report.chapters)], ensure_ascii=False)
-                })
-                
-                # 使用不同的温度，以获得更多样化的任务方案
-                llm_kwargs_temp = llm_kwargs.copy()
-                llm_kwargs_temp['temperature'] = 0.3 + variant_idx * 0.25  # 0.3, 0.55, 0.8
-                
-                print(f"\n🔄 生成任务方案变体 {variant_idx+1}/3 (温度: {llm_kwargs_temp['temperature']})")
-                
-                responses = call_openai(prompt_text, **llm_kwargs_temp)
-                if not responses:
-                    print(f"❌ 变体 {variant_idx+1} 没有收到有效响应")
-                    continue
-                
-                response_text = responses[0]
-                
-                try:
-                    # 清理响应文本，提取 JSON 部分
-                    json_text = self.extract_json_from_text(response_text)
-                    print(f"原始响应: {json_text}")
+                # 为每个章节方案创建2-3个不同的任务方案子节点
+                # 创建基础节点的多个副本
+                for variant_idx in range(3):  # 生成3个不同的任务方案变体
+                    # 创建子节点
+                    child_node = copy.deepcopy(node)
+                    child_node.parent_node = node
+                    child_node.parent_action = self
+                    child_node.depth = node.depth + 1
                     
-                    # 解析 JSON
-                    response_json = json.loads(json_text)
+                    # 生成 LLM 提示词
+                    prompt_text = get_prompt("Chapters2Tasks", {
+                        "QUERY": node.original_query,
+                        "DATA_CONTEXT": data_context,
+                        "CHAPTERS": json.dumps([{
+                            "title": getattr(chapter, 'title', f"章节{i+1}") if not isinstance(chapter, dict) else chapter.get('title', f"章节{i+1}")
+                        } for i, chapter in enumerate(child_node.report.chapters)], ensure_ascii=False)
+                    })
                     
-                    # 处理每个章节的可视化任务
-                    if "chapters" in response_json:
-                        # 创建章节标题到索引的映射
-                        chapter_title_to_index = {}
-                        for i, chapter in enumerate(child_node.report.chapters):
-                            # 安全获取标题文本
-                            if isinstance(chapter, dict):
-                                # 如果章节是字典类型
-                                if 'title' in chapter:
-                                    # 如果章节字典有'title'键
-                                    if isinstance(chapter['title'], dict):
-                                        # 如果'title'键对应的值也是字典
-                                        title_text = chapter['title'].get('title', '') or chapter['title'].get('text', f"章节{i+1}")
-                                    else:
-                                        # 如果'title'键对应的值是字符串
-                                        title_text = chapter['title']
-                                else:
-                                    # 如果章节字典没有'title'键，使用默认值
-                                    title_text = f"章节{i+1}"
-                            else:
-                                # 如果章节是对象类型
-                                title_attr = getattr(chapter, 'title', None)
-                                if isinstance(title_attr, dict):
-                                    # 如果title属性是字典
-                                    title_text = title_attr.get('title', '') or title_attr.get('text', f"章节{i+1}")
-                                else:
-                                    # 如果title属性是字符串或其他类型
-                                    title_text = title_attr if title_attr else f"章节{i+1}"
-                            
-                            # 确保title_text是字符串类型
-                            if not isinstance(title_text, str):
-                                title_text = str(title_text)
-                                
-                            # 存储小写标题文本到索引的映射
-                            chapter_title_to_index[title_text.lower()] = i
+                    # 使用不同的温度，以获得更多样化的任务方案
+                    llm_kwargs_temp = llm_kwargs.copy()
+                    llm_kwargs_temp['temperature'] = 0.3 + variant_idx * 0.25  # 0.3, 0.55, 0.8
+                    
+                    print(f"\n🔄 生成任务方案变体 {variant_idx+1}/3 (温度: {llm_kwargs_temp['temperature']})")
+                    
+                    responses = call_openai(prompt_text, **llm_kwargs_temp)
+                    if not responses:
+                        print(f"❌ 变体 {variant_idx+1} 没有收到有效响应")
+                        continue
+                    
+                    response_text = responses[0]
+                    
+                    try:
+                        # 清理响应文本，提取 JSON 部分
+                        json_text = self.extract_json_from_text(response_text)
+                        print(f"原始响应: {json_text}")
                         
-                        # 处理每个章节
-                        for chapter_info in response_json["chapters"]:
-                            raw_title = chapter_info.get("title", "")
-                            # 调试打印
-                            #print(f"DEBUG - 获取到的 title 类型: {type(raw_title)}")
-                            #print(f"DEBUG - title 内容: {raw_title}")
-                            
-                            # 安全获取标题文本
-                            if isinstance(raw_title, dict):
-                                # 如果是字典，尝试提取文本
-                                title_text = raw_title.get('title', '') or raw_title.get('text', '')
-                            else:
-                                # 如果不是字典，直接使用
-                                title_text = raw_title
-                            
-                            # 确保title_text是字符串类型
-                            if not isinstance(title_text, str):
-                                title_text = str(title_text) if title_text is not None else ""
+                        # 解析 JSON
+                        response_json = json.loads(json_text)
+                        
+                        # 处理每个章节的可视化任务
+                        if "chapters" in response_json:
+                            # 创建章节标题到索引的映射
+                            chapter_title_to_index = {}
+                            for i, chapter in enumerate(child_node.report.chapters):
+                                # 安全获取标题文本
+                                if isinstance(chapter, dict):
+                                    # 如果章节是字典类型
+                                    if 'title' in chapter:
+                                        # 如果章节字典有'title'键
+                                        if isinstance(chapter['title'], dict):
+                                            # 如果'title'键对应的值也是字典
+                                            title_text = chapter['title'].get('title', '') or chapter['title'].get('text', f"章节{i+1}")
+                                        else:
+                                            # 如果'title'键对应的值是字符串
+                                            title_text = chapter['title']
+                                    else:
+                                        # 如果章节字典没有'title'键，使用默认值
+                                        title_text = f"章节{i+1}"
+                                else:
+                                    # 如果章节是对象类型
+                                    title_attr = getattr(chapter, 'title', None)
+                                    if isinstance(title_attr, dict):
+                                        # 如果title属性是字典
+                                        title_text = title_attr.get('title', '') or title_attr.get('text', f"章节{i+1}")
+                                    else:
+                                        # 如果title属性是字符串或其他类型
+                                        title_text = title_attr if title_attr else f"章节{i+1}"
                                 
-                            tasks = chapter_info.get("tasks", [])
+                                # 确保title_text是字符串类型
+                                if not isinstance(title_text, str):
+                                    title_text = str(title_text)
+                                    
+                                # 存储小写标题文本到索引的映射
+                                chapter_title_to_index[title_text.lower()] = i
                             
-                            # 查找匹配的章节
-                            chapter_idx = -1
-                            title_lower = title_text.lower()  # 现在可以安全调用lower()
-                            
-                            # 精确匹配
-                            if title_lower in chapter_title_to_index:
-                                chapter_idx = chapter_title_to_index[title_lower]
-                            else:
-                                # 模糊匹配
-                                for i, chapter in enumerate(child_node.report.chapters):
-                                    # 安全获取章节标题
-                                    if isinstance(chapter, dict):
-                                        if 'title' in chapter:
-                                            if isinstance(chapter['title'], dict):
-                                                search_title = chapter['title'].get('title', '') or chapter['title'].get('text', f"章节{i+1}")
+                            # 处理每个章节
+                            for chapter_info in response_json["chapters"]:
+                                raw_title = chapter_info.get("title", "")
+                                # 调试打印
+                                #print(f"DEBUG - 获取到的 title 类型: {type(raw_title)}")
+                                #print(f"DEBUG - title 内容: {raw_title}")
+                                
+                                # 安全获取标题文本
+                                if isinstance(raw_title, dict):
+                                    # 如果是字典，尝试提取文本
+                                    title_text = raw_title.get('title', '') or raw_title.get('text', '')
+                                else:
+                                    # 如果不是字典，直接使用
+                                    title_text = raw_title
+                                
+                                # 确保title_text是字符串类型
+                                if not isinstance(title_text, str):
+                                    title_text = str(title_text) if title_text is not None else ""
+                                    
+                                tasks = chapter_info.get("tasks", [])
+                                
+                                # 查找匹配的章节
+                                chapter_idx = -1
+                                title_lower = title_text.lower()  # 现在可以安全调用lower()
+                                
+                                # 精确匹配
+                                if title_lower in chapter_title_to_index:
+                                    chapter_idx = chapter_title_to_index[title_lower]
+                                else:
+                                    # 模糊匹配
+                                    for i, chapter in enumerate(child_node.report.chapters):
+                                        # 安全获取章节标题
+                                        if isinstance(chapter, dict):
+                                            if 'title' in chapter:
+                                                if isinstance(chapter['title'], dict):
+                                                    search_title = chapter['title'].get('title', '') or chapter['title'].get('text', f"章节{i+1}")
+                                                else:
+                                                    search_title = chapter['title']
                                             else:
-                                                search_title = chapter['title']
+                                                search_title = f"章节{i+1}"
                                         else:
-                                            search_title = f"章节{i+1}"
-                                    else:
-                                        title_attr = getattr(chapter, 'title', None)
-                                        if isinstance(title_attr, dict):
-                                            search_title = title_attr.get('title', '') or title_attr.get('text', f"章节{i+1}")
-                                        else:
-                                            search_title = title_attr if title_attr else f"章节{i+1}"
-                                    
-                                    # 确保search_title是字符串类型
-                                    if not isinstance(search_title, str):
-                                        search_title = str(search_title)
+                                            title_attr = getattr(chapter, 'title', None)
+                                            if isinstance(title_attr, dict):
+                                                search_title = title_attr.get('title', '') or title_attr.get('text', f"章节{i+1}")
+                                            else:
+                                                search_title = title_attr if title_attr else f"章节{i+1}"
                                         
-                                    search_title_lower = search_title.lower()
-                                    if title_lower in search_title_lower or search_title_lower in title_lower:
-                                        chapter_idx = i
-                                        break
+                                        # 确保search_title是字符串类型
+                                        if not isinstance(search_title, str):
+                                            search_title = str(search_title)
+                                            
+                                        search_title_lower = search_title.lower()
+                                        if title_lower in search_title_lower or search_title_lower in title_lower:
+                                            chapter_idx = i
+                                            break
+                                
+                                if chapter_idx >= 0 and chapter_idx < len(child_node.report.chapters):
+                                    chapter = child_node.report.chapters[chapter_idx]
+                                    
+                                    # 清空现有任务列表
+                                    chapter.visualization_tasks = []
+                                    
+                                    # 添加任务
+                                    for task in tasks:
+                                        task_id = task.get("task_id", "")
+                                        description = task.get("task_description", "")
+                                        chart_type = task.get("chart_type", ["Bar Chart"])
+                                        
+                                        # 创建任务对象
+                                        task_obj = {
+                                            "task_id": task_id,
+                                            "task_description": description,
+                                            "chart_type": chart_type,
+                                            "status": "pending",  # 添加状态字段
+                                            "visualization_success": False  # 添加可视化成功标志
+                                        }
+                                        
+                                        # 添加到章节的任务列表
+                                        if not hasattr(chapter, 'visualization_tasks'):
+                                            chapter.visualization_tasks = []
+                                        chapter.visualization_tasks.append(task_obj)
+                                        
+                                        # 打印任务状态
+                                        print(f"   - 任务ID: '{task_id}'")
+                                        print(f"   - 任务描述: '{description}'")
+                                        print(f"   - 图表类型: {chart_type}")
+                                        print(f"   - 状态: {task_obj.get('status')}")
+                                    
+                                    # 打印调试信息
+                                    print(f"✅ 变体 {variant_idx+1} - 章节 {chapter_idx+1} ({chapter.title}) 生成了 {len(tasks)} 个可视化任务")
+                                    print(f"当前章节任务列表: {[t.get('task_id') for t in chapter.visualization_tasks]}")
+                                else:
+                                    print(f"❌ 找不到匹配的章节: {title_text}")
                             
-                            if chapter_idx >= 0 and chapter_idx < len(child_node.report.chapters):
-                                chapter = child_node.report.chapters[chapter_idx]
-                                
-                                # 清空现有任务列表
-                                chapter.visualization_tasks = []
-                                
-                                # 添加任务
-                                for task in tasks:
-                                    task_id = task.get("task_id", "")
-                                    description = task.get("task_description", "")
-                                    chart_type = task.get("chart_type", ["Bar Chart"])
-                                    
-                                    # 创建任务对象
-                                    task_obj = {
-                                        "task_id": task_id,
-                                        "task_description": description,
-                                        "chart_type": chart_type,
-                                        "status": "pending",  # 添加状态字段
-                                        "visualization_success": False  # 添加可视化成功标志
-                                    }
-                                    
-                                    # 添加到章节的任务列表
-                                    if not hasattr(chapter, 'visualization_tasks'):
-                                        chapter.visualization_tasks = []
-                                    chapter.visualization_tasks.append(task_obj)
-                                    
-                                    # 打印任务状态
-                                    print(f"   - 任务ID: '{task_id}'")
-                                    print(f"   - 任务描述: '{description}'")
-                                    print(f"   - 图表类型: {chart_type}")
-                                    print(f"   - 状态: {task_obj.get('status')}")
-                                
-                                # 打印调试信息
-                                print(f"✅ 变体 {variant_idx+1} - 章节 {chapter_idx+1} ({chapter.title}) 生成了 {len(tasks)} 个可视化任务")
-                                print(f"当前章节任务列表: {[t.get('task_id') for t in chapter.visualization_tasks]}")
-                            else:
-                                print(f"❌ 找不到匹配的章节: {title_text}")
+                            # 检查所有章节是否都有任务
+                            all_chapters_have_tasks = True
+                            for i, chapter in enumerate(child_node.report.chapters):
+                                if not hasattr(chapter, 'visualization_tasks') or not chapter.visualization_tasks:
+                                    print(f"⚠️ 变体 {variant_idx+1} - 章节 {i+1} ({chapter.title}) 没有任务")
+                                    all_chapters_have_tasks = False
+                                else:
+                                    print(f"✓ 变体 {variant_idx+1} - 章节 {i+1} ({chapter.title}) 有 {len(chapter.visualization_tasks)} 个任务")
+                            
+                            # 只有当所有章节都有任务时，才添加这个变体
+                            if all_chapters_have_tasks:
+                                children_nodes.append(child_node)
+                                print(f"✅ 任务方案变体 {variant_idx+1} 已添加到候选列表")
                         
-                        # 检查所有章节是否都有任务
-                        all_chapters_have_tasks = True
-                        for i, chapter in enumerate(child_node.report.chapters):
-                            if not hasattr(chapter, 'visualization_tasks') or not chapter.visualization_tasks:
-                                print(f"⚠️ 变体 {variant_idx+1} - 章节 {i+1} ({chapter.title}) 没有任务")
-                                all_chapters_have_tasks = False
-                            else:
-                                print(f"✓ 变体 {variant_idx+1} - 章节 {i+1} ({chapter.title}) 有 {len(chapter.visualization_tasks)} 个任务")
-                        
-                        # 只有当所有章节都有任务时，才添加这个变体
-                        if all_chapters_have_tasks:
-                            children_nodes.append(child_node)
-                            print(f"✅ 任务方案变体 {variant_idx+1} 已添加到候选列表")
-                    
-                except json.JSONDecodeError as e:
-                    print(f"❌ JSON 解析错误: {str(e)}")
-                    print(f"⚠️ 变体 {variant_idx+1} 无法解析 JSON，跳过")
-            
-            # 如果没有生成任何有效的方案，返回原始节点的副本
-            if not children_nodes:
-                print("⚠️ 没有生成任何有效的任务方案，返回原始节点")
-                fallback_node = copy.deepcopy(node)
-                fallback_node.parent_node = node
-                fallback_node.parent_action = self
-                fallback_node.depth = node.depth + 1
-                children_nodes.append(fallback_node)
-            
-            print(f"🔢 总共生成了 {len(children_nodes)} 个有效的任务方案变体")
-            
-        except Exception as e:
-            print(f"❌ 生成可视化任务时出错: {str(e)}")
-            traceback.print_exc()
-            # 确保即使出错也返回至少一个子节点
-            if not children_nodes:
-                fallback_node = copy.deepcopy(node)
-                fallback_node.parent_node = node
-                fallback_node.parent_action = self
-                fallback_node.depth = node.depth + 1
-                children_nodes.append(fallback_node)
+                    except json.JSONDecodeError as e:
+                        print(f"❌ JSON 解析错误: {str(e)}")
+                        print(f"⚠️ 变体 {variant_idx+1} 无法解析 JSON，跳过")
+                
+                # 如果没有生成任何有效的方案，返回原始节点的副本
+                if not children_nodes:
+                    print("⚠️ 没有生成任何有效的任务方案，返回原始节点")
+                    fallback_node = copy.deepcopy(node)
+                    fallback_node.parent_node = node
+                    fallback_node.parent_action = self
+                    fallback_node.depth = node.depth + 1
+                    children_nodes.append(fallback_node)
+                
+                print(f"🔢 总共生成了 {len(children_nodes)} 个有效的任务方案变体")
+                
+            except Exception as e:
+                print(f"❌ 生成可视化任务时出错: {str(e)}")
+                traceback.print_exc()
+                # 确保即使出错也返回至少一个子节点
+                if not children_nodes:
+                    fallback_node = copy.deepcopy(node)
+                    fallback_node.parent_node = node
+                    fallback_node.parent_action = self
+                    fallback_node.depth = node.depth + 1
+                    children_nodes.append(fallback_node)
         
         # 为所有生成的节点设置正确的状态
         for child_node in children_nodes:
@@ -644,17 +645,11 @@ class Chapters2Tasks(DataStorytellingAction):
 class Tasks2Charts(DataStorytellingAction):
     def __init__(self):
         super().__init__("A3", "生成可视化")
-        # 初始化图表相似度检测工具
-        try:
-            from storyteller.algorithm.utils.ChartSimilarity import ChartSimilarity
-            self.similarity_tool = ChartSimilarity()
-            self.similarity_threshold = 0.90  # 相似度阈值
-            self.use_similarity_check = self.similarity_tool.initialized
-            print("✅ 图表相似度检测工具初始化成功")
-        except Exception as e:
-            print(f"⚠️ 图表相似度检测工具初始化失败: {str(e)}")
-            self.use_similarity_check = False
-            
+        # 保存配置参数而不是实际的对象实例
+        self.similarity_threshold = 0.90  # 相似度阈值
+        self.use_similarity_check = True  # 标记是否应该使用相似度检查
+        self.use_chart2vega = True  # 标记是否应该使用chart2vega
+
     def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
         child_node = copy.deepcopy(node)
         child_node.parent_node = node
@@ -662,8 +657,30 @@ class Tasks2Charts(DataStorytellingAction):
         child_node.depth = node.depth + 1
 
         try:
+            # 初始化图表相似度检测工具（推迟到需要使用时才创建）
+            similarity_tool = None
+            if self.use_similarity_check:
+                try:
+                    from storyteller.algorithm.utils.ChartSimilarity import ChartSimilarity
+                    similarity_tool = ChartSimilarity()
+                    print("✅ 图表相似度检测工具初始化成功")
+                except Exception as e:
+                    print(f"⚠️ 图表相似度检测工具初始化失败: {str(e)}")
+                    similarity_tool = None
+            
+            # 初始化chart2vega（推迟到需要使用时才创建）
+            chart2vega_module = None
+            if self.use_chart2vega:
+                try:
+                    from storyteller.algorithm.utils import chart2vega
+                    chart2vega_module = chart2vega
+                    print("✅ chart2vega工具初始化成功")
+                except Exception as e:
+                    print(f"⚠️ chart2vega工具初始化失败: {str(e)}")
+                    chart2vega_module = None
+            
             # 递增迭代号 - 确保每次创建新节点时迭代号加1
-            #child_node.report.current_iteration += 1
+            # child_node.report.current_iteration += 1
             current_iteration = child_node.report.current_iteration
             print(f"✅ 当前迭代号: {current_iteration}")
             
@@ -672,11 +689,11 @@ class Tasks2Charts(DataStorytellingAction):
             os.makedirs(iteration_dir, exist_ok=True)
             charts_dir = os.path.join(iteration_dir, "charts")
             os.makedirs(charts_dir, exist_ok=True)
-          
-            # 创建一个额外的 JSON 配置目录
-            json_dir = os.path.join(iteration_dir, "chart_configs")
-            os.makedirs(json_dir, exist_ok=True)
-             
+           
+            # 新增：创建Vega-Lite配置目录
+            vegalite_dir = os.path.join(iteration_dir, "vegalite_configs")
+            os.makedirs(vegalite_dir, exist_ok=True)
+            
             # 获取数据集
             dataset_path = node.report.dataset_path
             df = pd.read_csv(dataset_path)
@@ -716,12 +733,13 @@ class Tasks2Charts(DataStorytellingAction):
                     file_name = re.sub(r'[<>:"/\\|?*]', '_', file_name)
                     chart_path = os.path.join(charts_dir, f"{file_name}.png")
 
-                    
+                    # 创建文本生成器和管理器（在局部作用域内创建，避免序列化问题）
                     from lida.datamodel import Goal, Summary
                     from lida.components.manager import Manager
-                    # 创建 Goal 对象 - 使用 description 替代 task_name
-                    #goal = Goal(question=task_id, visualization=chart_type, rationale=description) !!原先是这个
-                    goal = Goal(question=task_id, visualization=description, rationale=description)
+                    
+                    # 创建 Goal 对象
+                    goal = Goal(question=task_id, visualization=description, chart_type=chart_type)
+                    
                     # 创建 Summary 对象
                     # 读取数据摘要 JSON 文件
                     data_summary = {}
@@ -751,7 +769,6 @@ class Tasks2Charts(DataStorytellingAction):
                     )
                     
                     # 创建自定义的文本生成器
-                    #text_gen = llm(provider="openai", model="gpt-4-32k")
                     text_gen = llm(
                         provider="openai", 
                         model="gpt-4-32k"
@@ -775,32 +792,44 @@ class Tasks2Charts(DataStorytellingAction):
                         if hasattr(visualization, 'savefig'):
                             visualization.savefig(chart_path)
                             print(f"✓ 图表已保存到: {chart_path}")
-                                                   
-                            # 额外生成 Chart.js 配置 JSON 文件
+                            
+                            # 生成Vega-Lite配置
                             try:
-                                # 提取图表使用的实际数据
-                                # chart_data = self._extract_actual_data(visualization)
-                                chart_config = self._extract_chart_config(visualization, task_id, description, df, use_antv=True)
+                                # 使用chart2vega提取Vega-Lite配置
+                                chart_config = self._extract_chart_config(visualization, task_id, description, df, llm_kwargs, chart2vega_module)
                                 
-                                # 将提取的实际数据添加到配置中
-                                #if chart_data:
-                                #    chart_config['data'] = chart_data
-                                #    print(f"✓ 成功提取图表实际数据")
-                                
-                                # 获取 JSON 配置目录
-                                json_dir = os.path.join(os.path.dirname(charts_dir), "chart_configs")
-                                os.makedirs(json_dir, exist_ok=True)
-                                
-                                # 保存 JSON 配置
-                                json_file_name = f"{file_name}.json"
-                                json_path = os.path.join(json_dir, json_file_name)
-                                with open(json_path, "w", encoding="utf-8") as f:
-                                    json.dump(chart_config, f, ensure_ascii=False, indent=2)
-                                print(f"✓ 图表配置 JSON 已保存到: {json_path}")
+                                # 保存Vega-Lite配置
+                                if "vegalite_config" in chart_config and chart_config["vegalite_config"]:
+                                    vegalite_config = chart_config["vegalite_config"]
+                                    vegalite_file_name = f"{file_name}.json"
+                                    vegalite_path = os.path.join(vegalite_dir, vegalite_file_name)
+                                    
+                                    with open(vegalite_path, "w", encoding="utf-8") as f:
+                                        json.dump(vegalite_config, f, ensure_ascii=False, indent=2)
+                                    print(f"✓ Vega-Lite图表配置已保存到: {vegalite_path}")
+                                    
+                                    # 生成Vega-Lite HTML可视化
+                                    try:
+                                        if chart2vega_module:
+                                            # 创建HTML输出目录
+                                            html_dir = os.path.join(iteration_dir, "vegalite_html")
+                                            os.makedirs(html_dir, exist_ok=True)
+                                            
+                                            # 生成HTML文件
+                                            html_path = os.path.join(html_dir, f"{file_name}.html")
+                                            
+                                            # 创建HTML查看器
+                                            chart2vega_module.create_html_viewer(vegalite_config, html_path)
+                                            print(f"✓ Vega-Lite HTML可视化已保存到: {html_path}")
+                                    except Exception as e:
+                                        print(f"⚠️ 生成Vega-Lite HTML时出错: {str(e)}")
+                                        import traceback
+                                        traceback.print_exc()
                             except Exception as e:
-                                print(f"⚠️ 保存图表配置 JSON 时出错: {str(e)}")
+                                print(f"⚠️ 生成Vega-Lite配置时出错: {str(e)}")
+                                import traceback
                                 traceback.print_exc()
-                                json_path = None
+                                vegalite_path = None
                                 
                             # 额外保存图表数据为CSV，以便后续分析
                             try:
@@ -816,21 +845,12 @@ class Tasks2Charts(DataStorytellingAction):
                                 elif hasattr(visualization, 'data') and isinstance(visualization.data, pd.DataFrame):
                                     visualization.data.to_csv(csv_path, index=False)
                                     print(f"✓ 图表数据已保存到: {csv_path}")
-                                else:
-                                    # 尝试从代码中提取和分析数据
-                                    last_df_var = self._find_last_dataframe_variable(visualization.code)
-                                    if last_df_var:
-                                        # 这里我们无法直接访问代码中的变量
-                                        # 所以只能保存一个指示文件，提示chart_config使用什么变量
-                                        with open(csv_path + ".info", "w") as f:
-                                            f.write(f"Last DataFrame variable: {last_df_var}")
-                                        print(f"✓ 图表数据变量信息已保存: {last_df_var}")
                             except Exception as e:
                                 print(f"⚠️ 保存图表数据 CSV 时出错: {str(e)}")
                                 traceback.print_exc()
-        
+                            
                             # 检查图表相似度
-                            if self.use_similarity_check and all_charts:
+                            if similarity_tool and all_charts:
                                 # 收集已有图表的路径列表
                                 existing_chart_paths = []
                                 for chart in all_charts:
@@ -839,7 +859,7 @@ class Tasks2Charts(DataStorytellingAction):
                                 
                                 if existing_chart_paths:
                                     # 使用batch_compare计算相似度
-                                    is_too_similar, max_similarity, similar_chart_path, all_similarities = self.similarity_tool.batch_compare(
+                                    is_too_similar, max_similarity, similar_chart_path, all_similarities = similarity_tool.batch_compare(
                                         chart_path, existing_chart_paths, self.similarity_threshold
                                     )
                                     
@@ -946,8 +966,30 @@ class Tasks2Charts(DataStorytellingAction):
                                         
                                         # 在任务中记录代码路径
                                         vis_task['failed_code_path'] = code_file_path
+                                        
+                                        # 新增: 即使图表生成失败，也创建图表对象并添加到章节中
+                                        # 使用临时的占位图片路径或者特殊标记表示这是失败的图表
+                                        placeholder_chart = Chart(
+                                            url=code_file_path,  # 使用代码文件作为URL（这只是一个标识符）
+                                            caption="",
+                                            chart_type=chart_type,
+                                            task_id=task_id
+                                        )
+                                        
+                                        # 添加代码和失败标记
+                                        placeholder_chart.code = visualization.code
+                                        placeholder_chart.generation_failed = True  # 添加失败标记
+                                        
+                                        # 添加图表到章节
+                                        if not hasattr(chapter, 'charts'):
+                                            chapter.charts = []
+                                        
+                                        chapter.charts.append(placeholder_chart)
+                                        all_charts.append(placeholder_chart)
+                                        print(f"✅ 已添加失败图表占位符到章节，以便后续修复")
+                                        
                                     except Exception as e:
-                                        print(f"❌ 保存失败图表代码时出错: {str(e)}")
+                                        print(f"❌ 保存失败图表代码或创建占位图表时出错: {str(e)}")
                                 
                                 print(f"⚠️ 任务 '{description}' 虽然失败但已标记为已完成，避免无限循环")
                                 break
@@ -963,20 +1005,25 @@ class Tasks2Charts(DataStorytellingAction):
             return [child_node]
 
 
-    def _extract_chart_config(self, visualization, task_id, description, df, use_antv=False):
-        """从可视化代码中提取图表配置
+    def _extract_chart_config(self, visualization, task_id, description, df, llm_kwargs=None, chart2vega_module=None):
+        """从可视化代码中提取图表配置，只使用chart2vega转换为Vega-Lite
         
         参数:
-            visualization: 包含可视化代码的字典
+            visualization: 包含可视化代码的对象
             task_id: 任务ID
             description: 任务描述
             df: 数据DataFrame
-            use_antv: 是否使用AntV G2配置（默认为False，使用Chart.js）
+            llm_kwargs: LLM调用参数
+            chart2vega_module: chart2vega模块的实例
             
         返回:
-            图表配置字典
+            包含vegalite_config的配置字典
         """
-        chart_config = {}
+        # 初始化空配置
+        result_config = {
+            "title": description or "Chart",
+            "vegalite_config": None
+        }
         
         try:
             # 确保有可视化代码
@@ -989,962 +1036,93 @@ class Tasks2Charts(DataStorytellingAction):
             print(code)
             print("-" * 50)
             
-            # 打印DataFrame信息，帮助理解数据结构
-            print("\n📊 DataFrame信息:")
-            print(f"形状: {df.shape}")
-            print(f"列名: {df.columns.tolist()}")
-            print(f"数据类型:\n{df.dtypes}")
-            print("\n前5行数据:")
-            print(df.head(5).to_string())
-            print("-" * 50)
-            
-            # 导入AST解析器和配置转换函数
-            if use_antv:
-                from storyteller.algorithm.utils.chart_config_extractor import ChartConfigExtractor, convert_to_antv_config as convert_config
-                config_type = "AntV G2"
-            else:
-                from storyteller.algorithm.utils.chart_config_extractor import ChartConfigExtractor, convert_to_chartjs_config as convert_config
-                config_type = "Chart.js"
-            
-            # 创建提取器并解析代码
-            extractor = ChartConfigExtractor()
-            ast_config = extractor.extract_from_code(code)
-            
-            print(f"\n🔍 AST解析结果 (用于{config_type}):")
-            for key, value in ast_config.items():
-                print(f"- {key}: {value}")
-            
-            # 如果解析失败，回退到原有的静态分析
-            if "error" in ast_config:
-                print(f"⚠️ AST解析失败，回退到静态分析: {ast_config['error']}")
-                return self._extract_chart_config_fallback(visualization, task_id, description, df, use_antv)
-            
-            # 提取AST配置并修正字段信息
-            if "error" not in ast_config:
-                # 使用extractor实例直接调用resolve_chart_data
+            # 使用chart2vega直接将Python代码转换为Vega-Lite配置
+            if chart2vega_module:
                 try:
-                    chart_data = extractor.resolve_chart_data(df)
-                    print(f"✓ 使用AST解析器的resolve_chart_data方法生成图表数据")
-                    # 保存原始代码以便后续处理
-                    ast_config["code"] = code
+                    print("\n🚀 使用chart2vega工具生成Vega-Lite配置...")
+                    
+                    # 确保llm_kwargs参数正确传递
+                    if llm_kwargs is None:
+                        llm_kwargs = {}
+                    else:
+                        # 创建副本以避免修改原始对象
+                        llm_kwargs = llm_kwargs.copy()
+                    
+                    # 添加或确保设置了合适的模型
+                    if not llm_kwargs.get("model"):
+                        llm_kwargs["model"] = "gpt-4-turbo"
+                    
+                    # 确保API调用参数正确
+                    # 检查是否有base_url，如果没有设置，尝试从环境变量获取
+                    if not llm_kwargs.get("base_url"):
+                        env_base_url = os.environ.get("OPENAI_BASE_URL")
+                        if env_base_url:
+                            llm_kwargs["base_url"] = env_base_url
+                    
+                    # 检查是否有api_key，如果没有则尝试从环境变量获取
+                    if not llm_kwargs.get("api_key"):
+                        env_api_key = os.environ.get("OPENAI_API_KEY")
+                        if env_api_key:
+                            llm_kwargs["api_key"] = env_api_key
+                    
+                    # 添加重试逻辑
+                    max_retries = 2
+                    vegalite_config = None
+                    
+                    for retry in range(max_retries):
+                        try:
+                            if retry > 0:
+                                print(f"⚠️ 第 {retry+1} 次尝试调用chart2vega...")
+                                
+                            vegalite_config = chart2vega_module.convert_python_to_vegalite(code, llm_kwargs=llm_kwargs)
+                            
+                            if vegalite_config:
+                                print("✅ 成功使用LLM直接转换代码为Vega-Lite配置")
+                                break
+                            else:
+                                print(f"⚠️ 第 {retry+1} 次尝试失败")
+                        except Exception as e:
+                            print(f"⚠️ 第 {retry+1} 次尝试时出错: {str(e)}")
+                            
+                            if retry < max_retries - 1:
+                                print("⚠️ 稍后重试...")
+                                time.sleep(1)  # 短暂延迟再重试
+                    
+                    # 检查是否成功获取了Vega-Lite配置
+                    if vegalite_config:
+                        # 确保设置标题
+                        if isinstance(vegalite_config, dict) and (not vegalite_config.get("title") or vegalite_config["title"] == "Chart"):
+                            vegalite_config["title"] = description
+                            
+                        # 保存vegalite_config到结果
+                        result_config["vegalite_config"] = vegalite_config
+                        
+                        # 输出配置信息
+                        print(f"\n✓ 成功生成Vega-Lite配置:")
+                        if isinstance(vegalite_config.get("mark"), dict):
+                            print(f"- 图表类型: {vegalite_config.get('mark', {}).get('type', '')}")
+                        else:
+                            print(f"- 图表类型: {vegalite_config.get('mark', '')}")
+                        print(f"- 图表标题: {vegalite_config.get('title', '')}")
+                        
+                        if 'encoding' in vegalite_config:
+                            encoding = vegalite_config.get('encoding', {})
+                            print(f"- X轴字段: {encoding.get('x', {}).get('field', '')}")
+                            print(f"- Y轴字段: {encoding.get('y', {}).get('field', '')}")
+                    else:
+                        print("⚠️ LLM转换Vega-Lite配置失败")
+                        
                 except Exception as e:
-                    print(f"⚠️ 使用resolve_chart_data方法时出错: {e}")
-                    chart_data = None
-            
-            # 转换为目标配置（Chart.js或AntV G2）
-            chart_config = convert_config(ast_config, df)
-            
-            # 设置标题
-            if not chart_config.get("title") or chart_config["title"] == "Chart":
-                chart_config["title"] = description
-            
-            # 根据图表库类型输出不同的日志信息
-            if use_antv:
-                print(f"\n✓ 成功生成AntV G2配置:")
-                print(f"- 图表类型: {chart_config['type']}")
-                print(f"- 图表标题: {chart_config['title']}")
-                print(f"- X轴字段: {chart_config['xField']}")
-                print(f"- Y轴字段: {chart_config['yField']}")
-                print(f"- 数据点数量: {len(chart_config['data'])}")
-                series_field = chart_config.get('seriesField', None)
-                if series_field:
-                    print(f"- 分组字段: {series_field}")
-                print(f"- 是否堆叠: {'是' if chart_config.get('isStack', False) else '否'}")
-            else:
-                print(f"\n✓ 成功生成Chart.js配置:")
-                print(f"- 图表类型: {chart_config['chart_type']}")
-                print(f"- 图表标题: {chart_config['title']}")
-                print(f"- X轴字段: {chart_config.get('x_field', '')}")
-                print(f"- Y轴字段: {chart_config.get('y_field', '')}")
-                print(f"- 数据点数量: {len(chart_config['data']['labels'])}")
-                print(f"- 数据集数量: {len(chart_config['data']['datasets'])}")
-                print(f"- 是否堆叠柱状图: {'是' if chart_config.get('options', {}).get('scales', {}).get('y', {}).get('stacked', False) else '否'}")
+                    print(f"⚠️ 使用chart2vega时出错: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
             
         except Exception as e:
             print(f"⚠️ 提取图表配置时出错: {str(e)}")
             import traceback
             traceback.print_exc()
-            
-            # 回退到原有方法
-            chart_config = self._extract_chart_config_fallback(visualization, task_id, description, df, use_antv)
         
-        return chart_config
-    
-    def _extract_chart_config_fallback(self, visualization, task_id, description, df, use_antv=False):
-        """原始的图表配置提取方法，作为回退机制
-        
-        参数:
-            visualization: 包含可视化代码的字典
-            task_id: 任务ID
-            description: 任务描述
-            df: 数据DataFrame
-            use_antv: 是否使用AntV G2配置（默认为False，使用Chart.js）
-        """
-        chart_config = {}
-        
-        try:
-            code = visualization.code
-            
-            # 初始化基本变量
-            x_field = None
-            y_field = None
-            has_hue = False
-            hue_field = None
-            is_histogram_chart = False
-            is_multi_series = False  # 标记是否为多系列数据
-            is_stacked_bar = False   # 标记是否为堆叠柱状图
-            
-            # 解析可视化代码以提取关键信息
-            # 默认图表类型
-            chart_type = "bar"
-            
-            # 尝试确定图表类型
-            if 'plt.bar(' in code or '.plot.bar(' in code or 'kind="bar"' in code or "kind='bar'" in code:
-                chart_type = "bar"
-                # 检查是否是堆叠柱状图
-                if 'stacked=True' in code or 'stacked=True,' in code or "stacked=True)" in code:
-                    is_stacked_bar = True
-                    print("📊 检测到堆叠柱状图")
-            elif 'plt.line(' in code or '.plot(' in code and not '.plot.bar(' in code or 'kind="line"' in code or "kind='line'" in code:
-                chart_type = "line"
-            elif 'plt.scatter(' in code or '.plot.scatter(' in code or 'kind="scatter"' in code or "kind='scatter'" in code:
-                chart_type = "scatter"
-            elif 'plt.pie(' in code or 'kind="pie"' in code or "kind='pie'" in code:
-                chart_type = "pie"
-            elif 'plt.hist(' in code or 'kind="hist"' in code or "kind='hist'" in code:
-                chart_type = "bar"  # 直方图在 Chart.js 中使用 bar
-            
-            # 直接从plt.xlabel和plt.ylabel提取轴标签
-            xlabel_match = re.search(r'plt\.xlabel\([\'"]([^\'"]+)[\'"]\)', code)
-            if xlabel_match:
-                x_field = xlabel_match.group(1)
-                print(f"📊 从plt.xlabel直接提取x轴标题: {x_field}")
-            
-                ylabel_match = re.search(r'plt\.ylabel\([\'"]([^\'"]+)[\'"]\)', code)
-                if ylabel_match:
-                    y_field = ylabel_match.group(1)
-                print(f"📊 从plt.ylabel直接提取y轴标题: {y_field}")
-            
-            # 从sns绘图中提取轴标签
-            if not x_field:
-                sns_xlabel = re.search(r'ax\.set_xlabel\([\'"]([^\'"]+)[\'"]\)', code)
-                if sns_xlabel:
-                    x_field = sns_xlabel.group(1)
-                    print(f"📊 从sns绘图中提取x轴标题: {x_field}")
-            
-            if not y_field:
-                sns_ylabel = re.search(r'ax\.set_ylabel\([\'"]([^\'"]+)[\'"]\)', code)
-                if sns_ylabel:
-                    y_field = sns_ylabel.group(1)
-                    print(f"📊 从sns绘图中提取y轴标题: {y_field}")
-            
-            # 从图表标题提取信息
-            title = ""
-            title_match = re.search(r'plt\.title\([\'"]([^\'"]+)[\'"]\)', code)
-            if title_match:
-                title = title_match.group(1)
-                print(f"📊 从plt.title提取图表标题: {title}")
-            else:
-                # 尝试从ax.set_title提取
-                ax_title_match = re.search(r'ax\.set_title\([\'"]([^\'"]+)[\'"]\)', code)
-                if ax_title_match:
-                    title = ax_title_match.group(1)
-                    print(f"📊 从ax.set_title提取图表标题: {title}")
-                else:
-                    # 使用任务描述作为图表标题
-                    title = description
-                    print(f"⚠️ 未找到图表标题，使用任务描述: {title}")
-            
-            # 检查是否使用了hue参数 (分组)
-            hue_match = re.search(r'hue=[\'"]([^\'"]+)[\'"]', code)
-            if hue_match:
-                has_hue = True
-                hue_field = hue_match.group(1)
-                is_multi_series = True
-                print(f"📊 检测到hue参数: {hue_field}")
-            
-            # 检查.groupby()调用，可能表示分组
-            groupby_match = re.search(r'\.groupby\(\[[\'"]([^\'"]+)[\'"](?:,\s*[\'"]([^\'"]+)[\'"])?\]', code)
-            if groupby_match:
-                group_fields = [groupby_match.group(1)]
-                if groupby_match.group(2):
-                    group_fields.append(groupby_match.group(2))
-                
-                print(f"📊 检测到groupby分组字段: {', '.join(group_fields)}")
-                if not x_field and len(group_fields) > 0:
-                    x_field = group_fields[0]
-                    print(f"📊 使用第一个groupby字段作为x轴: {x_field}")
-                
-                # 如果有多个分组字段，第二个可能是hue
-                if len(group_fields) > 1 and not has_hue:
-                    has_hue = True
-                    hue_field = group_fields[1]
-                    is_multi_series = True
-                    print(f"📊 使用第二个groupby字段作为hue: {hue_field}")
-            
-            # 检查是否有pd.crosstab调用，这通常用于多系列数据
-            crosstab_match = re.search(r'pd\.crosstab\(([^,]+),\s*([^,\)]+)', code)
-            if crosstab_match:
-                is_multi_series = True
-                if not x_field:
-                    x_field_expr = crosstab_match.group(1).strip()
-                    if "df[" in x_field_expr:
-                        col_match = re.search(r'df\[[\'"]([^\'"]+)[\'"]\]', x_field_expr)
-                        if col_match:
-                            x_field = col_match.group(1)
-                            print(f"📊 从crosstab提取x轴字段: {x_field}")
-                
-                if not has_hue:
-                    hue_field_expr = crosstab_match.group(2).strip()
-                    if "df[" in hue_field_expr:
-                        col_match = re.search(r'df\[[\'"]([^\'"]+)[\'"]\]', hue_field_expr)
-                        if col_match:
-                            has_hue = True
-                            hue_field = col_match.group(1)
-                            print(f"📊 从crosstab提取hue字段: {hue_field}")
-            
-            # 提取代码中使用的数据变量
-            data_var_match = re.search(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*df\[', code)
-            data_var_name = None
-            if data_var_match:
-                data_var_name = data_var_match.group(1)
-                print(f"📊 找到数据变量名: {data_var_name}")
-            
-            # 尝试从plt.bar或其他绘图函数提取坐标和数据
-            column_name = None
-            
-            # 提取x轴使用的列名
-            x_col_match = re.search(r'df\[[\'"]([^\'"]+)[\'"]\]', code)
-            if x_col_match:
-                column_name = x_col_match.group(1)
-                if not x_field:
-                    x_field = column_name
-                print(f"📊 从代码提取可能的x轴列名: {column_name}")
-            
-            # 检查for循环中的绘图，可能表示多系列数据
-            for_loop_match = re.search(r'for\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+in\s+([a-zA-Z_][a-zA-Z0-9_]*)', code)
-            if for_loop_match:
-                loop_var = for_loop_match.group(1)
-                loop_iterable = for_loop_match.group(2)
-                print(f"📊 检测到for循环: {loop_var} in {loop_iterable}")
-                is_multi_series = True
-            
-            # 检查堆叠条形图特定的代码模式
-            if 'bottom=' in code or '.stack()' in code:
-                is_stacked_bar = True
-                print("📊 检测到堆叠柱状图特征(bottom参数或stack方法)")
-            
-            # 数据预处理逻辑
-            # 1. 提取实际数据标签和值
-            labels = []
-            data_values = []
-            datasets = []
-            
-            # 分析实际使用的列名
-            if x_field and x_field in df.columns:
-                # 从DataFrame中提取实际的x轴标签
-                unique_values = df[x_field].dropna().unique()
-                if len(unique_values) > 0 and len(unique_values) <= 30:  # 限制标签数量
-                    labels = [str(val) for val in unique_values]
-                    print(f"📊 从DataFrame提取x轴实际值: {labels}")
-            
-            # 如果有hue字段，则尝试提取多系列数据
-            if has_hue and hue_field and hue_field in df.columns and x_field and x_field in df.columns:
-                is_multi_series = True
-                
-                # 获取hue字段的唯一值
-                hue_values = df[hue_field].dropna().unique()
-                x_values = df[x_field].dropna().unique()
-                
-                print(f"📊 hue字段'{hue_field}'的唯一值: {hue_values}")
-                print(f"📊 x字段'{x_field}'的唯一值: {x_values}")
-                
-                # 准备标签
-                labels = [str(val) for val in x_values]
-                
-                # 如果是堆叠柱状图，尝试从DataFrame重建数据
-                if is_stacked_bar and y_field:
-                    try:
-                        # 创建交叉表
-                        if y_field in df.columns:
-                            # 尝试创建交叉表，按x_field和hue_field分组，聚合y_field
-                            cross_tab = df.pivot_table(
-                                index=x_field, 
-                                columns=hue_field, 
-                                values=y_field, 
-                                aggfunc='sum'
-                            ).fillna(0)
-                            
-                            # 准备每个系列的数据集
-                            colors = self._get_colors(len(hue_values), 0.7)
-                            border_colors = self._get_colors(len(hue_values), 1.0)
-                            
-                            for i, hue_val in enumerate(cross_tab.columns):
-                                datasets.append({
-                                    "label": str(hue_val),
-                                    "data": cross_tab[hue_val].tolist(),
-                                    "backgroundColor": colors[i],
-                                    "borderColor": border_colors[i],
-                                    "borderWidth": 1
-                                })
-                            
-                            print(f"✓ 成功从DataFrame创建堆叠柱状图数据，包含{len(datasets)}个系列")
-                        else:
-                            print(f"⚠️ y_field '{y_field}' 不在DataFrame列中")   
-                    except Exception as e:
-                        print(f"⚠️ 创建堆叠柱状图数据时出错: {str(e)}")
-                elif is_multi_series:
-                    # 非堆叠图的多系列数据处理
-                    try:
-                        # 为每个hue值创建一个数据集
-                        colors = self._get_colors(len(hue_values), 0.7)
-                        border_colors = self._get_colors(len(hue_values), 1.0)
-                        
-                        for i, hue_val in enumerate(hue_values):
-                            # 过滤数据
-                            filtered_df = df[df[hue_field] == hue_val]
-                            
-                            # 如果有y_field，使用它来聚合数据
-                            if y_field and y_field in df.columns:
-                                agg_data = filtered_df.groupby(x_field)[y_field].sum().reindex(x_values).fillna(0).tolist()
-                            else:
-                                # 否则只计算每个x值的计数
-                                agg_data = filtered_df.groupby(x_field).size().reindex(x_values).fillna(0).tolist()
-                            
-                                datasets.append({
-                                    "label": str(hue_val),
-                                    "data": agg_data,
-                                    "backgroundColor": colors[i],
-                                    "borderColor": border_colors[i],
-                                    "borderWidth": 1
-                                })
-                        
-                        print(f"✓ 成功从DataFrame创建多系列数据，包含{len(datasets)}个系列")
-                    except Exception as e:
-                        print(f"⚠️ 创建多系列数据时出错: {str(e)}")
-            
-            # 标记这是一个直方图/频数统计图表
-            is_histogram_chart = 'plt.hist(' in code or 'sns.histplot' in code or 'kind="hist"' in code
-            
-            # 准备频数分布图表数据
-            if is_histogram_chart and column_name and column_name in df.columns:
-                print(f"📊 数据中存在列 '{column_name}'，生成频数分布")
-                            
-                # 处理带hue参数的countplot（多系列数据）
-                if has_hue and hue_field and hue_field in df.columns:
-                    print(f"📊 使用hue参数 '{hue_field}' 生成分组频数统计")
-                    is_multi_series = True
-                                
-                    # 使用crosstab生成交叉表
-                    cross_tab = pd.crosstab(df[column_name], df[hue_field])
-                                
-                    # 准备多系列数据
-                    labels = cross_tab.index.astype(str).tolist()
-                                
-                    # 为每个hue类别创建一个数据集
-                    datasets = []
-                    hue_categories = cross_tab.columns.tolist()
-                    colors = self._get_colors(len(hue_categories), 0.7)
-                                
-                    for i, hue_cat in enumerate(hue_categories):
-                            datasets.append({
-                            "label": str(hue_cat),
-                            "data": cross_tab[hue_cat].tolist(),
-                            "backgroundColor": colors[i],
-                            "borderColor": colors[i].replace("0.7", "1.0"),
-                            "borderWidth": 1
-                            })
-                else:
-                    # 单系列直方图处理
-                    if not labels and len(df[column_name].dropna().unique()) <= 30:
-                        # 使用唯一值作为标签
-                        labels = [str(val) for val in sorted(df[column_name].dropna().unique())]
-                        # 计算每个值的频率
-                        value_counts = df[column_name].value_counts().reindex(sorted(df[column_name].dropna().unique()))
-                        data_values = value_counts.tolist()
-            
-            # 如果x_field或y_field仍未找到，尝试从其他代码中提取
-            if not x_field or not y_field:
-                # 这里保留原有的提取逻辑
-                pass
-            
-            # 如果labels为空，尝试设置默认值或从DataFrame提取值
-            if not labels:
-                if x_field and x_field in df.columns:
-                    # 尝试从DataFrame列中提取唯一值
-                    unique_values = df[x_field].dropna().unique()
-                    if len(unique_values) <= 30:  # 限制标签数量
-                        labels = [str(val) for val in unique_values]
-                    else:
-                        # 如果唯一值太多，只使用前15个
-                        labels = [str(val) for val in unique_values[:15]]
-                else:
-                    # 默认标签
-                    labels = ["类别1", "类别2", "类别3", "类别4", "类别5"]
-            
-            # 最终构建Chart.js配置
-            chart_config = {
-                "chart_type": chart_type,
-                "title": title,
-                "x_field": x_field,
-                "y_field": y_field,
-                "is_stacked": is_stacked_bar,
-                "data": {
-                    "labels": labels,
-                    "datasets": datasets
-                },
-                "options": {
-                    "responsive": True,
-                    "maintainAspectRatio": False,
-                    "plugins": {
-                        "title": {
-                            "display": True,
-                            "text": title
-                        },
-                        "legend": {
-                            "position": "top",
-                            "display": len(datasets) > 1 or chart_type == 'pie'
-                        },
-                        "tooltip": {
-                            "enabled": True
-                        }
-                    }
-                }
-            }
-            
-            # 添加scales配置（如果不是饼图）
-            if chart_type != "pie":
-                chart_config["options"]["scales"] = {
-                    "y": {
-                        "beginAtZero": True,
-                        "title": {
-                            "display": True,
-                            "text": y_field or "值"
-                        }
-                    },
-                    "x": {
-                        "title": {
-                            "display": True,
-                            "text": x_field or "类别"
-                        }
-                    }
-                }
-                
-            # 如果是堆叠柱状图，设置堆叠选项
-            if is_stacked_bar and chart_type == "bar":
-                chart_config["options"]["scales"]["x"]["stacked"] = True
-                chart_config["options"]["scales"]["y"]["stacked"] = True
-            
-            return chart_config
-
-        except Exception as e:
-            print(f"⚠️ 提取图表配置时出错: {str(e)}")
-            traceback.print_exc()
-            
-            # 创建一个默认配置
-            chart_config = {
-                "chart_type": "bar",
-                "x_field": "undefined",
-                "y_field": "undefined",
-                "title": description,
-                "data": {
-                    "labels": ["类别1", "类别2", "类别3", "类别4", "类别5"],
-                    "datasets": [
-                        {
-                            "label": description,
-                            "data": [5, 10, 15, 7, 12],
-                            "backgroundColor": "rgba(75, 192, 192, 0.2)",
-                            "borderColor": "rgba(75, 192, 192, 1)",
-                            "borderWidth": 1
-                        }
-                    ]
-                },
-                "options": {
-                    "responsive": True,
-                    "maintainAspectRatio": False,
-                    "plugins": {
-                        "title": {
-                            "display": True,
-                            "text": description
-                        }
-                    }
-                }
-            }
-        
-        return chart_config
-
-    def _get_colors(self, length, opacity=0.7):
-        """获取指定数量的颜色，用于图表
-
-        参数:
-            length: 需要的颜色数量
-            opacity: 透明度，0到1之间
-            
-        返回:
-            颜色列表，格式为rgba(r,g,b,a)
-        """
-        # 预定义的美观调色板
-        base_colors = [
-            (54, 162, 235),    # 蓝色
-            (255, 99, 132),    # 红色
-            (75, 192, 192),    # 青色
-            (255, 159, 64),    # 橙色
-            (153, 102, 255),   # 紫色
-            (255, 205, 86),    # 黄色
-            (201, 203, 207),   # 灰色
-            (22, 160, 133),    # 绿松石
-            (142, 68, 173),    # 紫罗兰
-            (241, 196, 15),    # 金色
-            (231, 76, 60),     # 石榴红
-            (52, 152, 219),    # 天蓝
-            (46, 204, 113),    # 祖母绿
-            (155, 89, 182),    # 淡紫色
-            (26, 188, 156),    # 青碧色
-            (192, 57, 43),     # 深红色
-            (41, 128, 185),    # 靛蓝色
-            (39, 174, 96),     # 深绿色
-        ]
-        
-        # 如果需要的颜色数量小于预定义的颜色数量，直接返回前n个
-        if length <= len(base_colors):
-            return [f"rgba({r}, {g}, {b}, {opacity})" for r, g, b in base_colors[:length]]
-        
-        # 如果需要更多颜色，对已有的颜色进行插值
-        # 为简化，我们循环使用已有的颜色
-        result = []
-        for i in range(length):
-            idx = i % len(base_colors)
-            r, g, b = base_colors[idx]
-            # 每次循环都稍微调整一下透明度，增加变化
-            adjusted_opacity = max(0.3, min(0.9, opacity - 0.05 * (i // len(base_colors))))
-            result.append(f"rgba({r}, {g}, {b}, {adjusted_opacity})")
-        
-        return result
-    
-    # def _find_best_matching_column(self, label, df):
-    #     """查找与给定标签最匹配的DataFrame列名
-        
-    #     参数:
-    #         label: 从可视化代码中提取的标签名
-    #         df: 数据DataFrame
-            
-    #     返回:
-    #         最匹配的列名，如果没有找到则返回None
-    #     """
-    #     if label in df.columns:
-    #         return label
-            
-    #     # 1. 尝试简化标签（小写、移除空格等）
-    #     simplified_label = label.lower().replace(' ', '_')
-    #     for col in df.columns:
-    #         if simplified_label == col.lower().replace(' ', '_'):
-    #             return col
-                
-    #     # 2. 检查是否有部分匹配
-    #     label_words = set(label.lower().split())
-    #     best_match = None
-    #     best_score = 0
-        
-    #     for col in df.columns:
-    #         col_words = set(col.lower().split('_'))
-    #         # 计算匹配单词的数量
-    #         match_score = len(label_words.intersection(col_words))
-    #         if match_score > best_score:
-    #             best_score = match_score
-    #             best_match = col
-                
-    #     # 如果至少有一个单词匹配，返回最佳匹配
-    #     if best_score > 0:
-    #         print(f"📊 找到与'{label}'最匹配的列: '{best_match}'")
-    #         return best_match
-            
-    #     # 3. 根据图表类型推断可能的列
-    #     # 如果标签暗示是计数/数量
-    #     if any(word in label.lower() for word in ['count', 'number', 'quantity', 'amount']):
-    #         # 尝试找到数值型列
-    #         numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
-    #         if numeric_cols:
-    #             print(f"📊 标签'{label}'暗示计数/数量，使用数值列: '{numeric_cols[0]}'")
-    #             return numeric_cols[0]
-                
-    #     # 没有找到合适的匹配
-    #     return None
-
-    def _find_last_dataframe_variable(self, code):
-        """从代码中找出最后一个定义的DataFrame变量
-        
-        参数:
-            code: 可视化代码
-            
-        返回:
-            变量名或None
-        """
-        # 查找变量定义模式
-        var_assigns = re.findall(r'(\w+)\s*=\s*', code)
-        plot_vars = re.findall(r'(\w+)\.plot', code)
-        
-        # 如果找到了用于绘图的变量，优先返回
-        if plot_vars:
-            return plot_vars[-1]
-        
-        # 否则返回最后定义的变量
-        if var_assigns:
-            return var_assigns[-1]
-        
-        return None
-        
-   # def _extract_actual_data(self, visualization):
-        """尝试从可视化对象提取实际用于绘图的数据
-        
-        参数:
-            visualization: 可视化对象
-            
-        返回:
-            dict: 包含数据的字典，格式适用于Chart.js
-        """
-        try:
-            # 检查可视化对象是否有数据属性
-            if not hasattr(visualization, 'code'):
-                return None
-                
-            code = visualization.code
-            print("\n📊 尝试提取图表实际数据:")
-            
-            # 1. 解析代码以确定图表类型
-            chart_type = "bar"  # 默认
-            if 'plt.bar(' in code or '.plot.bar(' in code or 'kind="bar"' in code or "kind='bar'" in code:
-                chart_type = "bar"
-            elif 'plt.line(' in code or '.plot(' in code and not '.plot.bar(' in code:
-                chart_type = "line"
-            elif 'plt.scatter(' in code or '.plot.scatter(' in code:
-                chart_type = "scatter" 
-            elif 'plt.pie(' in code or 'kind="pie"' in code or "kind='pie'" in code:
-                chart_type = "pie"
-            elif 'plt.hist(' in code or 'kind="hist"' in code or "kind='hist'" in code:
-                chart_type = "bar"  # 直方图在 Chart.js 中使用 bar
-            
-            # 2. 检查可视化对象是否有Figure属性
-            fig = None
-            if hasattr(visualization, 'fig'):
-                fig = visualization.fig
-                print("✓ 找到fig属性")
-            elif hasattr(visualization, 'figure'):
-                fig = visualization.figure
-                print("✓ 找到figure属性")
-            elif hasattr(visualization, 'plt') and hasattr(visualization.plt, 'gcf'):
-                # 尝试从plt对象获取当前图形
-                try:
-                    fig = visualization.plt.gcf()
-                    print("✓ 从plt.gcf()获取到当前图形")
-                except:
-                    pass
-                    
-            # 3. 尝试从可视化代码中提取最后的结果变量
-            if not fig:
-                # 尝试从代码中找到最后返回的变量
-                result_match = re.search(r'return\s+(\w+)', code)
-                if result_match:
-                    result_var = result_match.group(1)
-                    print(f"✓ 从代码中找到返回变量: {result_var}")
-                    
-                    # 检查visualization对象是否有这个属性
-                    if hasattr(visualization, result_var):
-                        result_obj = getattr(visualization, result_var)
-                        if hasattr(result_obj, 'figure'):
-                            fig = result_obj.figure
-                            print(f"✓ 从返回变量获取到figure")
-                        elif hasattr(result_obj, 'gcf'):
-                            try:
-                                fig = result_obj.gcf()
-                                print(f"✓ 从返回变量的gcf()获取到figure")
-                            except:
-                                pass
-                
-            # 4. 如果有Figure，尝试从中提取数据
-            data_extracted = False
-            if fig is not None:
-                try:
-                    # 直接从图形对象提取所有数据
-                    all_data = {}
-                    
-                    for i, ax in enumerate(fig.axes):
-                        print(f"✓ 分析图表轴 #{i+1}")
-                        
-                        # 提取条形图数据
-                        if chart_type == "bar" and hasattr(ax, 'containers') and ax.containers:
-                            try:
-                                container = ax.containers[0]
-                                heights = [rect.get_height() for rect in container]
-                                
-                                # 提取X轴标签
-                                if hasattr(ax, 'get_xticklabels'):
-                                    labels = [label.get_text() for label in ax.get_xticklabels() if label.get_text()]
-                                    if not labels or len(labels) != len(heights):
-                                        # 尝试从坐标中获取位置
-                                        x_positions = [rect.get_x() + rect.get_width()/2 for rect in container]
-                                        labels = [str(pos) for pos in x_positions]
-                                else:
-                                    # 找不到标签，使用默认值
-                                    labels = [f"类别{i+1}" for i in range(len(heights))]
-                                    
-                                all_data = {
-                                    "labels": labels,
-                                    "datasets": [{
-                                        "label": "数据",
-                                        "data": heights
-                                    }]
-                                }
-                                print(f"✓ 从条形图提取到{len(heights)}个数据点")
-                                data_extracted = True
-                                break
-                            except Exception as e:
-                                print(f"从条形图容器提取数据时出错: {str(e)}")
-                        
-                        # 提取线图数据
-                        if (chart_type == "line" or not data_extracted) and hasattr(ax, 'lines') and ax.lines:
-                            try:
-                                all_datasets = []
-                                for j, line in enumerate(ax.lines):
-                                    x_data = line.get_xdata()
-                                    y_data = line.get_ydata()
-                                    
-                                    # 转换为列表并处理numpy数组
-                                    if hasattr(x_data, 'tolist'):
-                                        x_data = x_data.tolist()
-                                    if hasattr(y_data, 'tolist'):
-                                        y_data = y_data.tolist()
-                                    
-                                    # 只保留前100个点(如果数据太大)
-                                    if len(x_data) > 100:
-                                        step = len(x_data) // 100
-                                        x_data = x_data[::step][:100]
-                                        y_data = y_data[::step][:100]
-                                        
-                                    # 如果是第一条线，设置labels
-                                    if j == 0:
-                                        all_data["labels"] = [str(x) for x in x_data]
-                                        
-                                    all_datasets.append({
-                                        "label": f"系列{j+1}",
-                                        "data": y_data
-                                    })
-                                
-                                if all_datasets:
-                                    all_data["datasets"] = all_datasets
-                                    print(f"✓ 从线图提取到{len(all_datasets)}个系列的数据")
-                                    data_extracted = True
-                                    break
-                            except Exception as e:
-                                print(f"从线图提取数据时出错: {str(e)}")
-                        
-                        # 提取散点图数据
-                        if (chart_type == "scatter" or not data_extracted) and hasattr(ax, 'collections') and ax.collections:
-                            try:
-                                all_datasets = []
-                                for j, collection in enumerate(ax.collections):
-                                    if hasattr(collection, 'get_offsets'):
-                                        offsets = collection.get_offsets()
-                                        if hasattr(offsets, 'tolist'):
-                                            points = offsets.tolist()
-                                            
-                                            # 限制数据点数量
-                                            if len(points) > 100:
-                                                points = points[:100]
-                                                
-                                            x_data = [point[0] for point in points]
-                                            y_data = [point[1] for point in points]
-                                            
-                                            # 如果是第一个集合，设置labels
-                                            if j == 0:
-                                                all_data["labels"] = [str(x) for x in x_data]
-                                                
-                                            all_datasets.append({
-                                                "label": f"系列{j+1}",
-                                                "data": y_data
-                                            })
-                                
-                                if all_datasets:
-                                    all_data["datasets"] = all_datasets
-                                    print(f"✓ 从散点图提取到{len(all_datasets)}个系列的数据")
-                                    data_extracted = True
-                                    break
-                            except Exception as e:
-                                print(f"从散点图提取数据时出错: {str(e)}")
-                        
-                        # 提取饼图数据 
-                        if (chart_type == "pie" or not data_extracted) and hasattr(ax, 'patches') and ax.patches:
-                            try:
-                                patches = ax.patches
-                                sizes = [patch.theta2 - patch.theta1 for patch in patches]
-                                
-                                # 提取标签
-                                labels = []
-                                if hasattr(ax, 'texts') and ax.texts:
-                                    labels = [text.get_text() for text in ax.texts if text.get_text()]
-                                
-                                if not labels or len(labels) != len(sizes):
-                                    labels = [f"部分{i+1}" for i in range(len(sizes))]
-                                    
-                                # 归一化尺寸为百分比
-                                total = sum(sizes)
-                                sizes = [size/total*100 for size in sizes]
-                                
-                                all_data = {
-                                    "labels": labels,
-                                    "datasets": [{
-                                        "label": "数据",
-                                        "data": sizes
-                                    }]
-                                }
-                                print(f"✓ 从饼图提取到{len(sizes)}个数据点")
-                                data_extracted = True
-                                break
-                            except Exception as e:
-                                print(f"从饼图提取数据时出错: {str(e)}")
-                    
-                    if data_extracted and all_data:
-                        print(f"✓ 成功从图形对象提取数据")
-                        return all_data
-                except Exception as e:
-                    print(f"从图形对象提取数据时出错: {str(e)}")
-            
-            # 5. 如果上述方法都失败，检查是否有数据属性
-            if hasattr(visualization, '_data') and isinstance(visualization._data, pd.DataFrame):
-                df = visualization._data
-                print(f"✓ 找到数据属性 _data")
-                # 根据不同图表类型处理数据
-                data = self._process_dataframe_for_chart(df, chart_type)
-                if data:
-                    return data
-                
-            elif hasattr(visualization, 'data') and isinstance(visualization.data, pd.DataFrame):
-                df = visualization.data
-                print(f"✓ 找到数据属性 data")
-                # 根据不同图表类型处理数据
-                data = self._process_dataframe_for_chart(df, chart_type)
-                if data:
-                    return data
-            
-            # 6. 尝试从代码中找到数据框变量并执行代码
-            try:
-                # 查找最后一个DataFrame变量
-                last_df_var = self._find_last_dataframe_variable(code)
-                if last_df_var and 'df' in locals():
-                    print(f"✓ 找到最后的DataFrame变量: {last_df_var}")
-                    # 提取代码中的最终数据处理部分
-                    # 这里只是一个简化处理，实际上应该更复杂
-                    df_code_pattern = f"{last_df_var}\s*=.*?(?=\n\n|\Z)"
-                    df_code_match = re.search(df_code_pattern, code, re.DOTALL)
-                    if df_code_match:
-                        df_code = df_code_match.group(0)
-                        print(f"✓ 提取到DataFrame处理代码")
-                        # 这里我们不能直接执行代码，但至少知道有这样的代码段
-                        # 可以添加到日志中以便后续分析
-            except Exception as e:
-                print(f"分析代码中的DataFrame变量时出错: {str(e)}")
-                
-            # 7. 如果还是找不到数据，尝试模拟执行，这部分保留现有的_extract_chart_config方法的能力
-            print("⚠️ 无法直接从可视化对象提取数据")
-            return None
-                
-        except Exception as e:
-            print(f"⚠️ 提取图表实际数据时出错: {str(e)}")
-            traceback.print_exc()
-            return None
-            
-    def _process_dataframe_for_chart(self, df, chart_type):
-        """根据图表类型处理DataFrame并生成适合的数据结构
-        
-        参数:
-            df: 数据框
-            chart_type: 图表类型
-            
-        返回:
-            适合Chart.js的数据字典
-        """
-        try:
-            if df.empty:
-                return None
-                
-            # 针对不同图表类型处理数据
-            if chart_type in ["bar", "line"]:
-                # 假设第一列为标签，其余列为数据
-                # 这是一个简化处理，实际可能需要更复杂的逻辑
-                if len(df.columns) >= 2:
-                    labels = df.iloc[:, 0].astype(str).tolist()
-                    data_cols = df.columns[1:]
-                    
-                    datasets = []
-                    for col in data_cols:
-                        datasets.append({
-                            "label": col,
-                            "data": df[col].tolist()
-                        })
-                    
-                    return {
-                        "labels": labels,
-                        "datasets": datasets
-                    }
-                else:
-                    # 单列数据，使用索引作为标签
-                    labels = [str(i) for i in range(len(df))]
-                    data = df.iloc[:, 0].tolist()
-                    
-                    return {
-                        "labels": labels,
-                        "datasets": [{
-                            "label": df.columns[0],
-                            "data": data
-                        }]
-                    }
-                    
-            elif chart_type == "scatter":
-                # 散点图通常需要两列：x和y
-                if len(df.columns) >= 2:
-                    x_data = df.iloc[:, 0].tolist()
-                    y_data = df.iloc[:, 1].tolist()
-                    
-                    return {
-                        "labels": [str(x) for x in x_data],
-                        "datasets": [{
-                            "label": df.columns[1],
-                            "data": y_data
-                        }]
-                    }
-                    
-            elif chart_type == "pie":
-                # 饼图通常是一列标签和一列数值
-                if len(df.columns) >= 2:
-                    labels = df.iloc[:, 0].astype(str).tolist()
-                    data = df.iloc[:, 1].tolist()
-                    
-                    return {
-                        "labels": labels,
-                        "datasets": [{
-                            "label": df.columns[1],
-                            "data": data
-                        }]
-                    }
-                else:
-                    # 单列数据，使用值计数
-                    value_counts = df.iloc[:, 0].value_counts()
-                    labels = value_counts.index.astype(str).tolist()
-                    data = value_counts.values.tolist()
-                    
-                    return {
-                        "labels": labels,
-                        "datasets": [{
-                            "label": df.columns[0],
-                            "data": data
-                        }]
-                    }
-                    
-            return None
-            
-        except Exception as e:
-            print(f"⚠️ 处理DataFrame时出错: {str(e)}")
-            traceback.print_exc()
-            return None
+        return result_config
 
 class ReviseVis(DataStorytellingAction):
     def __init__(self):
@@ -2005,12 +1183,12 @@ class ReviseVis(DataStorytellingAction):
                         # 读取数据
                         df = pd.read_csv(dataset_path)
                         
-                        # 创建 LIDA 管理器
+                        # 在方法内创建LIDA管理器和文本生成器（局部变量）
                         from lida.components.manager import Manager
                         from lida.datamodel import Summary
                         
-                        # 创建自定义的文本生成器
-                        text_gen = llm(provider="openai", model="gpt-4-32k")
+                        # 创建自定义的文本生成器（作为局部变量）
+                        text_gen = llm(provider="openai", model="gpt-4o")
                         manager = Manager(text_gen=text_gen)
                         
                         # 读取数据摘要 JSON 文件
@@ -2040,12 +1218,49 @@ class ReviseVis(DataStorytellingAction):
                             fields=[info.get("dtype", "unknown") for info in data_summary.get("fields_info", {}).values()] if "fields_info" in data_summary else [str(dtype) for dtype in df.dtypes.tolist()]
                         )
                         
-                        # 生成编辑指令
-                        edit_instruction = "修改图表错误，比如修改为更合适的图表类型，让图表更加美观，清晰"
-                        #print(f"生成的编辑指令: {edit_instruction}")
+                        # 检查任务描述和图表代码，决定是否需要生成表格而不是图表
+                        chart_generation_failed = getattr(selected_chart, 'generation_failed', False)
                         
-                        # 使用 LIDA 的 edit 功能修改图表
-                        print(f"正在修改任务 '{description}' 的图表...")
+                        # 判断是否需要将图表转换为表格
+                        # 如果图表生成失败，或有其他标记指示应该使用表格
+                        if chart_generation_failed:
+                            print(f"📊 检测到图表生成失败，尝试生成表格形式展示数据")
+                            edit_instruction = f"""
+                            请将这个失败的可视化代码转换为生成表格的代码。原始任务描述是: '{description}'
+                            
+                            请遵循以下指导:
+                            1. 仔细分析原始任务描述，确保表格能够展示与原任务相同的数据关系和对比
+                                - 分析任务想要展示的变量关系（例如，若要比较两组数据，表格应包含这两组的对比）
+                                - 明确任务中的X轴和Y轴变量，并确保这些变量在表格中有明确的列
+                                - 保留任务中要求的聚合方式（平均值、总和、计数等）
+                             
+                            2. 数据处理部分:
+                                - 保留原代码中的关键数据筛选、分组和聚合操作
+                                - 如果任务需要比较多个类别或组，确保所有类别都在表格中
+                             
+                            3. 表格设计：
+                                - 为表格创建清晰的行和列标签，与原任务的X轴/Y轴命名保持一致
+                                - 限制表格中的数据行数（最多显示15行关键数据）
+                                - 对数值进行适当的格式化（例如保留2位小数）
+                                - 如果原任务是比较不同类别，可以添加百分比差异列
+                             
+                            4. 表格样式:
+                                - 使用matplotlib的plt.table()创建表格
+                                - 调整表格颜色和样式，提高可读性和美观度
+                                - 根据数据类型设置合适的单元格颜色（例如使用颜色深浅表示数值大小）
+                             
+                            5. 元数据:
+                                - 使用原始任务的标题，并在标题中注明这是表格形式
+                             
+                            主要目标是确保表格形式能够完整展现原始可视化任务想要传达的数据洞察和关系。
+                            最终输出应该是能够直接保存为PNG的matplotlib图像。
+                            """
+                        else:
+                            # 如果不是生成表格，使用普通的图表修改指令
+                            edit_instruction = "修改图表错误，比如修改为更合适的图表类型，让图表更加美观，清晰"
+                        
+                        # 使用 LIDA 的 edit 功能修改图表/生成表格
+                        print(f"正在为任务 '{description}' 生成{'表格' if chart_generation_failed else '图表'}...")
                         edited_visualization = manager.edit(
                             code=selected_chart.code,
                             summary=summary,
@@ -2055,111 +1270,120 @@ class ReviseVis(DataStorytellingAction):
                         
                         # 处理编辑后的可视化结果
                         if edited_visualization is None:
-                            print("✗ 编辑可视化图表失败: 返回结果为None")
+                            print(f"✗ 生成{'表格' if chart_generation_failed else '图表'}失败: 返回结果为None")
                         elif isinstance(edited_visualization, list) and len(edited_visualization) > 0:
                             edited_visualization = edited_visualization[0]
-                            print("✓ 使用第一个编辑结果进行处理")
+                            print(f"✓ 使用第一个编辑结果进行处理")
                         
                         # 检查是否为有效的编辑结果
                         if hasattr(edited_visualization, 'status') and edited_visualization.status:
-                            print("✓ 成功修改可视化图表")
+                            print(f"✓ 成功生成{'表格' if chart_generation_failed else '图表'}")
                             
                             # 找到当前图表所在的迭代目录
                             original_chart_path = selected_chart.url
                             chart_dir = os.path.dirname(original_chart_path)
                             
                             # 将修改后的图表保存到同一目录下
-                            edited_chart_name = f"{task_id}_edited.png"
+                            suffix = "_table" if chart_generation_failed else "_edited"
+                            edited_chart_name = f"{task_id}{suffix}.png"
                             edited_chart_path = os.path.join(chart_dir, edited_chart_name)
                             
-                            # 保存修改后的图表
+                            # 保存修改后的图表或表格
                             if hasattr(edited_visualization, 'savefig'):
                                 edited_visualization.savefig(edited_chart_path)
-                                print(f"✓ 修改后的图表已保存到: {edited_chart_path}")
-                            
-                                
-                                # 额外生成 Chart.js 配置 JSON 文件
-                                try:
-                                    # 借用 Tasks2Charts 类中的方法来提取图表配置
-                                    from storyteller.algorithm.mcts_action import Tasks2Charts
-                                    tasks2charts = Tasks2Charts()
-                                    
-                                    # 提取图表使用的实际数据
-                                    chart_data = tasks2charts._extract_actual_data(edited_visualization)
-                                    chart_config = tasks2charts._extract_chart_config(edited_visualization, task_id, description, df)
-                                    
-                                    # 将提取的实际数据添加到配置中
-                                    if chart_data:
-                                        chart_config['data'] = chart_data
-                                        print(f"✓ 成功提取图表实际数据")
-                                    
-                                    # 获取 JSON 配置目录
-                                    json_dir = os.path.join(os.path.dirname(chart_dir), "chart_configs")
-                                    os.makedirs(json_dir, exist_ok=True)
-                                    
-                                    # 保存 JSON 配置
-                                    json_file_name = f"{task_id}_edited.json"
-                                    json_path = os.path.join(json_dir, json_file_name)
-                                    with open(json_path, "w", encoding="utf-8") as f:
-                                        json.dump(chart_config, f, ensure_ascii=False, indent=2)
-                                    print(f"✓ 图表配置 JSON 已保存到: {json_path}")
-                                    
-                                    # 额外保存图表数据为CSV，以便后续分析
+                                print(f"✓ {'表格' if chart_generation_failed else '图表'}已保存到: {edited_chart_path}")
+
+                                # 生成Vega-Lite配置 (仅对图表执行，表格跳过)
+                                if not chart_generation_failed:
                                     try:
-                                        csv_dir = os.path.join(os.path.dirname(chart_dir), "chart_data")
-                                        os.makedirs(csv_dir, exist_ok=True)
-                                        csv_file_name = f"{task_id}_edited.csv"
-                                        csv_path = os.path.join(csv_dir, csv_file_name)
+                                        # 直接使用提取配置的逻辑，而不是实例化Tasks2Charts
+                                        chart_config = self._extract_chart_config(edited_visualization, task_id, description, df, llm_kwargs)
                                         
-                                        # 尝试从可视化对象中提取实际使用的数据
-                                        if hasattr(edited_visualization, '_data') and isinstance(edited_visualization._data, pd.DataFrame):
-                                            edited_visualization._data.to_csv(csv_path, index=False)
-                                            print(f"✓ 修改后的图表数据已保存到: {csv_path}")
-                                        elif hasattr(edited_visualization, 'data') and isinstance(edited_visualization.data, pd.DataFrame):
-                                            edited_visualization.data.to_csv(csv_path, index=False)
-                                            print(f"✓ 修改后的图表数据已保存到: {csv_path}")
-                                        else:
-                                            # 尝试从代码中提取和分析数据
-                                            last_df_var = tasks2charts._find_last_dataframe_variable(edited_visualization.code)
-                                            if last_df_var:
-                                                # 这里我们无法直接访问代码中的变量
-                                                # 所以只能保存一个指示文件，提示chart_config使用什么变量
-                                                with open(csv_path + ".info", "w") as f:
-                                                    f.write(f"Last DataFrame variable: {last_df_var}")
-                                                print(f"✓ 修改后的图表数据变量信息已保存: {last_df_var}")
+                                        # 保存Vega-Lite配置
+                                        if "vegalite_config" in chart_config and chart_config["vegalite_config"]:
+                                            vegalite_config = chart_config["vegalite_config"]
+                                            
+                                            # 获取Vega-Lite配置目录
+                                            vegalite_dir = os.path.join(os.path.dirname(chart_dir), "vegalite_configs")
+                                            os.makedirs(vegalite_dir, exist_ok=True)
+                                            
+                                            # 保存Vega-Lite配置
+                                            vegalite_file_name = f"{task_id}_edited.json"
+                                            vegalite_path = os.path.join(vegalite_dir, vegalite_file_name)
+                                            
+                                            with open(vegalite_path, "w", encoding="utf-8") as f:
+                                                json.dump(vegalite_config, f, ensure_ascii=False, indent=2)
+                                            print(f"✓ Vega-Lite图表配置已保存到: {vegalite_path}")
+                                            
+                                            # 生成HTML查看器
+                                            try:
+                                                # 导入chart2vega（局部导入）
+                                                from storyteller.algorithm.utils import chart2vega
+                                                
+                                                # 创建HTML输出目录
+                                                html_dir = os.path.join(os.path.dirname(chart_dir), "vegalite_html")
+                                                os.makedirs(html_dir, exist_ok=True)
+                                                
+                                                # 生成HTML文件
+                                                html_path = os.path.join(html_dir, f"{task_id}_edited.html")
+                                                
+                                                # 创建HTML查看器
+                                                chart2vega.create_html_viewer(vegalite_config, html_path)
+                                                print(f"✓ Vega-Lite HTML可视化已保存到: {html_path}")
+                                            except Exception as e:
+                                                print(f"⚠️ 生成HTML查看器时出错: {str(e)}")
+                                                traceback.print_exc()
                                     except Exception as e:
-                                        print(f"⚠️ 保存修改后的图表数据 CSV 时出错: {str(e)}")
+                                        print(f"⚠️ 生成Vega-Lite配置时出错: {str(e)}")
+                                        import traceback
                                         traceback.print_exc()
+                                
+                                # 额外保存图表数据为CSV，以便后续分析
+                                try:
+                                    csv_dir = os.path.join(os.path.dirname(chart_dir), "chart_data")
+                                    os.makedirs(csv_dir, exist_ok=True)
+                                    csv_file_name = f"{task_id}{suffix}.csv"
+                                    csv_path = os.path.join(csv_dir, csv_file_name)
+                                    
+                                    # 尝试从可视化对象中提取实际使用的数据
+                                    if hasattr(edited_visualization, '_data') and isinstance(edited_visualization._data, pd.DataFrame):
+                                        edited_visualization._data.to_csv(csv_path, index=False)
+                                        print(f"✓ {'表格' if chart_generation_failed else '图表'}数据已保存到: {csv_path}")
+                                    elif hasattr(edited_visualization, 'data') and isinstance(edited_visualization.data, pd.DataFrame):
+                                        edited_visualization.data.to_csv(csv_path, index=False)
+                                        print(f"✓ {'表格' if chart_generation_failed else '图表'}数据已保存到: {csv_path}")
                                 except Exception as e:
-                                    print(f"⚠️ 保存图表配置 JSON 时出错: {str(e)}")
+                                    print(f"⚠️ 保存{'表格' if chart_generation_failed else '图表'}数据 CSV 时出错: {str(e)}")
                                     traceback.print_exc()
-                                    json_path = None
 
                             # 创建新的图表对象
                             from storyteller.algorithm.mcts_node import Chart
                             edited_chart = Chart(
                                 url=edited_chart_path,
                                 caption="",  # 使用空字符串作为初始说明
-                                chart_type=selected_chart.chart_type,
+                                chart_type="table" if chart_generation_failed else selected_chart.chart_type,
                                 task_id=task_id  # 使用原始任务ID/描述
                             )
                             edited_chart.needs_caption = True  # 设置需要生成说明文字的标志
-                           
-                            # 添加JSON配置路径属性
-                            if 'json_path' in locals() and json_path:
-                                edited_chart.json_config_path = json_path
-                                print(f"- JSON 配置路径: {json_path}")                            
-
+                            edited_chart.is_table = chart_generation_failed  # 标记是否为表格
+                            
                             # 更新章节中的图表
                             for i, c in enumerate(chapter.charts):
                                 if hasattr(c, 'task_id') and c.task_id == task_id:
                                     chapter.charts[i] = edited_chart
+                                    # 更新任务状态为成功
+                                    for vis_task in chapter.visualization_tasks:
+                                        if vis_task.get('task_id') == task_id:
+                                            vis_task['visualization_success'] = True
+                                            vis_task['converted_to_table'] = chart_generation_failed
+                                            print(f"✅ 更新任务 '{task_id}' 状态为成功生成{'表格' if chart_generation_failed else '图表'}")
+                                            break
                                     break
                         else:
                             error_msg = edited_visualization.error if hasattr(edited_visualization, 'error') else "未知错误"
-                            print(f"✗ 修改可视化图表失败: {error_msg}")
+                            print(f"✗ 生成{'表格' if chart_generation_failed else '图表'}失败: {error_msg}")
                     except Exception as e:
-                        print(f"✗ 修改可视化图表时发生错误: {str(e)}")
+                        print(f"✗ 为任务 '{task_id}' 生成{'表格' if getattr(selected_chart, 'generation_failed', False) else '图表'}时发生错误: {str(e)}")
                         import traceback
                         traceback.print_exc()
             
@@ -2175,7 +1399,124 @@ class ReviseVis(DataStorytellingAction):
             child_node.node_type = ReportGenerationState.a4
             return [child_node]
    
- 
+    def _extract_chart_config(self, visualization, task_id, description, df, llm_kwargs=None):
+        """从可视化代码中提取图表配置，转换为Vega-Lite
+        
+        参数:
+            visualization: 包含可视化代码的对象
+            task_id: 任务ID
+            description: 任务描述
+            df: 数据DataFrame
+            llm_kwargs: LLM调用参数
+            
+        返回:
+            包含vegalite_config的配置字典
+        """
+        # 初始化空配置
+        result_config = {
+            "title": description or "Chart",
+            "vegalite_config": None
+        }
+        
+        try:
+            # 确保有可视化代码
+            if not hasattr(visualization, 'code'):
+                raise ValueError("可视化对象没有代码属性")
+            
+            code = visualization.code
+            print("\n📋 分析可视化代码:")
+            print("-" * 50)
+            print(code)
+            print("-" * 50)
+            
+            # 导入chart2vega（局部导入）
+            try:
+                from storyteller.algorithm.utils import chart2vega
+                print("\n🚀 使用chart2vega工具生成Vega-Lite配置...")
+                
+                # 确保llm_kwargs参数正确传递
+                if llm_kwargs is None:
+                    llm_kwargs = {}
+                else:
+                    # 创建副本以避免修改原始对象
+                    llm_kwargs = llm_kwargs.copy()
+                
+                # 添加或确保设置了合适的模型
+                if not llm_kwargs.get("model"):
+                    llm_kwargs["model"] = "gpt-4-turbo"
+                
+                # 检查是否有base_url，如果没有设置，尝试从环境变量获取
+                if not llm_kwargs.get("base_url"):
+                    env_base_url = os.environ.get("OPENAI_BASE_URL")
+                    if env_base_url:
+                        llm_kwargs["base_url"] = env_base_url
+                
+                # 检查是否有api_key，如果没有则尝试从环境变量获取
+                if not llm_kwargs.get("api_key"):
+                    env_api_key = os.environ.get("OPENAI_API_KEY")
+                    if env_api_key:
+                        llm_kwargs["api_key"] = env_api_key
+                
+                # 添加重试逻辑
+                max_retries = 2
+                vegalite_config = None
+                
+                for retry in range(max_retries):
+                    try:
+                        if retry > 0:
+                            print(f"⚠️ 第 {retry+1} 次尝试调用chart2vega...")
+                            
+                        vegalite_config = chart2vega.convert_python_to_vegalite(code, llm_kwargs=llm_kwargs)
+                        
+                        if vegalite_config:
+                            print("✅ 成功使用LLM直接转换代码为Vega-Lite配置")
+                            break
+                        else:
+                            print(f"⚠️ 第 {retry+1} 次尝试失败")
+                        
+                    except Exception as e:
+                        print(f"⚠️ 第 {retry+1} 次尝试时出错: {str(e)}")
+                        
+                        if retry < max_retries - 1:
+                            print("⚠️ 稍后重试...")
+                            time.sleep(1)  # 短暂延迟再重试
+                
+                # 检查是否成功获取了Vega-Lite配置
+                if vegalite_config:
+                    # 确保设置标题
+                    if isinstance(vegalite_config, dict) and (not vegalite_config.get("title") or vegalite_config["title"] == "Chart"):
+                        vegalite_config["title"] = description
+                        
+                    # 保存vegalite_config到结果
+                    result_config["vegalite_config"] = vegalite_config
+                    
+                    # 输出配置信息
+                    print(f"\n✓ 成功生成Vega-Lite配置:")
+                    if isinstance(vegalite_config.get("mark"), dict):
+                        print(f"- 图表类型: {vegalite_config.get('mark', {}).get('type', '')}")
+                    else:
+                        print(f"- 图表类型: {vegalite_config.get('mark', '')}")
+                    print(f"- 图表标题: {vegalite_config.get('title', '')}")
+                    
+                    if 'encoding' in vegalite_config:
+                        encoding = vegalite_config.get('encoding', {})
+                        print(f"- X轴字段: {encoding.get('x', {}).get('field', '')}")
+                        print(f"- Y轴字段: {encoding.get('y', {}).get('field', '')}")
+                else:
+                    print("⚠️ LLM转换Vega-Lite配置失败")
+                    
+                        
+            except Exception as e:
+                print(f"⚠️ 使用chart2vega时出错: {str(e)}")
+                import traceback
+                traceback.print_exc()
+            
+        except Exception as e:
+            print(f"⚠️ 提取图表配置时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        return result_config
 
 class Charts2Captions(DataStorytellingAction):
     def __init__(self):
@@ -2197,10 +1538,34 @@ class Charts2Captions(DataStorytellingAction):
 
     def call_vision_api(self, prompt, image_base64_list, **kwargs):
         """统一处理视觉API调用，支持单个或多个图像"""
-        url = "https://gpt-api.hkust-gz.edu.cn/v1/chat/completions"
+        import os
+        import requests
+        import json
+        
+        # 获取环境变量
+        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        
+        # 日志记录
+        print(f"🔄 环境变量状态: OPENAI_BASE_URL={base_url}, OPENAI_API_KEY={'已设置' if api_key else '未设置'}")
+        
+        # 构造完整的API URL
+        if base_url.endswith('/chat/completions'):
+            url = base_url  # 已经是完整URL
+        elif base_url.endswith('/v1'):
+            url = f"{base_url}/chat/completions"  # 添加chat/completions端点
+        else:
+            # 确保URL以斜杠结尾
+            if not base_url.endswith('/'):
+                base_url += '/'
+            url = f"{base_url}v1/chat/completions"  # 添加v1/chat/completions路径
+            
+        print(f"🔄 使用API URL: {url}")
+        
+        # 设置请求头
         headers = {
             "Content-Type": "application/json",
-            "Authorization": "7ca9f48d315049bbad0b355afcd5f3a147a8395e46f249e3b7890ffa9ca5122c"
+            "Authorization": f"Bearer {api_key}" if api_key else ""
         }
         
         # 准备图像内容
@@ -2219,17 +1584,34 @@ class Charts2Captions(DataStorytellingAction):
             {"role": "user", "content": [{"type": "text", "text": prompt}, *image_contents]}
         ]
         
+        # 设置API调用参数
+        model = "gpt-4-turbo"  # 使用固定模型，而不是从kwargs中获取
+        temperature = kwargs.get("temperature", 0.7)
+        max_tokens = kwargs.get("max_tokens", 4096)
+        
         data = {
-            "model": "gpt-4-turbo",
+            "model": model,
             "messages": messages,
-            "temperature": kwargs.get("temperature", 0.7),
-            "max_tokens": kwargs.get("max_tokens", 4096)
+            "temperature": temperature,
+            "max_tokens": max_tokens
         }
+        
+        print(f"🔄 调用视觉API，模型: {model}, 温度: {temperature}")
         
         # 调用API
         try:
-            response = requests.post(url, headers=headers, data=json.dumps(data))
+            # 创建本地会话对象，而不是使用全局会话
+            session = requests.Session()
+            
+            # 设置超时
+            timeout = kwargs.get("timeout", 60)
+            
+            # 发送请求
+            response = session.post(url, headers=headers, json=data, timeout=timeout)
             response_json = response.json()
+            
+            # 关闭会话
+            session.close()
             
             if 'choices' in response_json and response_json['choices']:
                 return response_json['choices'][0]['message']['content'].strip()
@@ -2240,7 +1622,7 @@ class Charts2Captions(DataStorytellingAction):
             traceback.print_exc()
         
         return None
-            
+    
     def generate_chapter_caption_schemes(self, node, chapter, chapter_idx, charts, num_schemes=3, llm_kwargs=None):
         """为单个章节的所有图表生成多套说明方案，具有重试机制"""
         # 过滤出成功生成的图表
@@ -2488,49 +1870,59 @@ class Charts2Captions(DataStorytellingAction):
         
         # 策略：所有章节使用同一套方案编号（全部用方案1，全部用方案2...）
         for scheme_idx in range(min(max_schemes, max_nodes)):
-            child_node = copy.deepcopy(node)
-            child_node.parent_node = node
-            child_node.parent_action = self
-            child_node.depth = node.depth + 1
-            child_node.node_type = ReportGenerationState.a5
-            
-            caption_applied = False  # 跟踪是否应用了任何说明
-            
-            # 对每个章节应用相同编号的方案
-            for chapter_data in all_chapter_schemes:
-                chapter_idx = chapter_data["chapter_idx"]
-                schemes = chapter_data["schemes"]
+            try:
+                # 在 try 块中进行深拷贝操作，捕获可能的序列化错误
+                child_node = copy.deepcopy(node)
+                child_node.parent_node = node
+                child_node.parent_action = self
+                child_node.depth = node.depth + 1
+                child_node.node_type = ReportGenerationState.a5
                 
-                # 如果此章节有对应编号的方案
-                if 0 <= scheme_idx < len(schemes):
-                    scheme = schemes[scheme_idx]
-                    chapter = child_node.report.chapters[chapter_idx]
+                caption_applied = False  # 跟踪是否应用了任何说明
+                
+                # 对每个章节应用相同编号的方案
+                for chapter_data in all_chapter_schemes:
+                    chapter_idx = chapter_data["chapter_idx"]
+                    schemes = chapter_data["schemes"]
                     
-                    print(f"🔄 为子节点{scheme_idx+1}应用章节{chapter_idx+1}的方案{scheme.get('scheme_id', scheme_idx+1)}")
-                    
-                    # 应用此方案中的所有图表说明
-                    for caption_info in scheme.get("captions", []):
-                        chart_idx = caption_info.get("chart_idx")
-                        caption = caption_info.get("caption", "")
+                    # 如果此章节有对应编号的方案
+                    if 0 <= scheme_idx < len(schemes):
+                        scheme = schemes[scheme_idx]
                         
-                        if hasattr(chapter, 'charts') and 0 <= chart_idx < len(chapter.charts):
-                            chart = chapter.charts[chart_idx]
-                            chart.caption = caption
-                            chart.needs_caption = False
-                            caption_applied = True
+                        # 安全地获取章节
+                        if 0 <= chapter_idx < len(child_node.report.chapters):
+                            chapter = child_node.report.chapters[chapter_idx]
                             
-                            # 更新任务状态
-                            if hasattr(chapter, 'visualization_tasks'):
-                                for task in chapter.visualization_tasks:
-                                    if task.get('task_id') == chart.task_id:
-                                        task['status'] = 'completed'
-                                        task['caption_generated'] = True
-                                        break
-                        
-            if caption_applied:  # 只有当应用了说明时才添加节点
-                child_node.caption_strategy = f"统一方案{scheme_idx+1}"
-                children_nodes.append(child_node)
-                print(f"✅ 成功创建子节点 {scheme_idx+1}，使用统一方案 {scheme_idx+1}")
+                            print(f"🔄 为子节点{scheme_idx+1}应用章节{chapter_idx+1}的方案{scheme.get('scheme_id', scheme_idx+1)}")
+                            
+                            # 应用此方案中的所有图表说明
+                            for caption_info in scheme.get("captions", []):
+                                chart_idx = caption_info.get("chart_idx")
+                                caption = caption_info.get("caption", "")
+                                
+                                if hasattr(chapter, 'charts') and 0 <= chart_idx < len(chapter.charts):
+                                    chart = chapter.charts[chart_idx]
+                                    chart.caption = caption
+                                    chart.needs_caption = False
+                                    caption_applied = True
+                                    
+                                    # 更新任务状态
+                                    if hasattr(chapter, 'visualization_tasks'):
+                                        for task in chapter.visualization_tasks:
+                                            if task.get('task_id') == chart.task_id:
+                                                task['status'] = 'completed'
+                                                task['caption_generated'] = True
+                                                break
+                
+                if caption_applied:  # 只有当应用了说明时才添加节点
+                    child_node.caption_strategy = f"统一方案{scheme_idx+1}"
+                    children_nodes.append(child_node)
+                    print(f"✅ 成功创建子节点 {scheme_idx+1}，使用统一方案 {scheme_idx+1}")
+
+            except Exception as e:
+                print(f"❌ 创建方案 {scheme_idx+1} 的子节点时出错: {str(e)}")
+                traceback.print_exc()
+                continue
         
         return children_nodes
 
@@ -3034,7 +2426,7 @@ class Captions2Summaries(DataStorytellingAction):
                 
                 if success_count > 0:
                     # 设置节点状态
-                    child_node.node_type = ReportGenerationState.FINALIZED
+                    child_node.node_type = ReportGenerationState.a6
                     child_node.summary_cluster_id = cluster_id
                     children_nodes.append(child_node)
                     print(f"✅ 成功创建聚类 {cluster_id} 的子节点")
@@ -3046,7 +2438,7 @@ class Captions2Summaries(DataStorytellingAction):
                 child_node.parent_node = node
                 child_node.parent_action = self
                 child_node.depth = node.depth + 1
-                child_node.node_type = ReportGenerationState.FINALIZED
+                child_node.node_type = ReportGenerationState.a6
                 return [child_node]
             
             return children_nodes
@@ -3061,7 +2453,7 @@ class Captions2Summaries(DataStorytellingAction):
             self.process_all_chapters(child_node, llm_kwargs=llm_kwargs)
         
         # 设置最终状态
-        child_node.node_type = ReportGenerationState.FINALIZED
+        child_node.node_type = ReportGenerationState.a6
         
         return [child_node]
     
@@ -3165,6 +2557,7 @@ class ReviseNarrativeStrategy(DataStorytellingAction):
             node_applier=self.apply_narrative_strategy,
             n=3  # 生成3个不同的叙事策略方案
         )
+
 
 
 class TransitionAction(DataStorytellingAction):
@@ -3288,6 +2681,44 @@ class ChartUtils:
         print(f"Debug: 图表将保存到: {charts_dir}")
         
         return charts_dir
+
+    def get_current_iteration_dir(self):
+        """获取当前迭代的输出目录"""
+        try:
+            # 检查是否有当前迭代目录属性
+            if hasattr(self, 'current_iteration_dir') and self.current_iteration_dir:
+                return self.current_iteration_dir
+            
+            # 检查是否有输出根目录属性
+            if hasattr(self, 'output_dir') and self.output_dir:
+                # 找到最新的迭代目录
+                iteration_dirs = glob.glob(os.path.join(self.output_dir, "iteration_*"))
+                if iteration_dirs:
+                    # 按创建时间排序，获取最新的
+                    latest_dir = max(iteration_dirs, key=os.path.getctime)
+                    return latest_dir
+            
+            # 如果没有设置输出目录，使用默认的输出目录
+            default_output_dir = os.path.join("output", "mcts")
+            os.makedirs(default_output_dir, exist_ok=True)
+            
+            # 查找最新的迭代目录
+            iteration_dirs = glob.glob(os.path.join(default_output_dir, "iteration_*"))
+            if iteration_dirs:
+                latest_dir = max(iteration_dirs, key=os.path.getctime)
+                return latest_dir
+            
+            # 如果没有找到迭代目录，创建一个新的
+            new_dir = os.path.join(default_output_dir, f"iteration_{int(time.time())}")
+            os.makedirs(new_dir, exist_ok=True)
+            return new_dir
+            
+        except Exception as e:
+            print(f"⚠️ 获取当前迭代目录时出错: {str(e)}")
+            # 返回临时目录
+            temp_dir = os.path.join("output", "temp_charts")
+            os.makedirs(temp_dir, exist_ok=True)
+            return temp_dir
 
 
 

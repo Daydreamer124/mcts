@@ -5,7 +5,7 @@ Chapter Title
 {CHAPTER_TITLE}
 Charts in the Chapter and Their Descriptions
 {visualization_tasks}
-Based on the information above, generate a coherent, comprehensive chapter summary. The summary should:
+Based on the information above, generate a coherent chapter summary. The summary should:
 
 Begin with a brief introduction to the chapter's topic and purpose
 Synthesize findings from all charts to extract key insights
@@ -14,4 +14,4 @@ Identify patterns, trends, or relationships in the data
 Provide in-depth interpretation of these findings
 Conclude with a summary of the main findings and suggest possible recommendations or directions for further analysis
 
-The summary should be a well-structured paragraph, within 100 words in length, with professional yet accessible language.
+The summary should be a well-structured paragraph, within 50 words in length, with professional yet accessible language.

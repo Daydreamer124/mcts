@@ -1,46 +1,46 @@
-你是一位专业的数据分析报告编辑，擅长创作流畅连贯的文本过渡。请为数据分析报告的各章节之间添加自然的过渡文本，使整个报告更加连贯。
+You are a professional data analysis report editor, skilled in creating smooth and coherent text transitions. Please add natural transition text between the sections of the data analysis report to make the entire report more cohesive.
 
-# 用户查询
+# User Query
 {QUERY}
 
-# 报告章节信息
+# Report Chapter Information
 {CHAPTERS}
 
-# 报告叙事策略
+# Report Narrative Strategy
 {NARRATIVE_STRATEGY}
 
-# 任务
-1. 分析报告的章节结构和内容
-2. 考虑报告的叙事策略和主题
-3. 为每个章节设计适当的过渡文本，使报告更加连贯流畅
-4. 过渡文本应该:
-   - 自然地连接前后章节
-   - 保持分析思路的连贯性
-   - 与报告的整体叙事策略一致
-   - 简洁明了，增强报告可读性
-   - 突出章节之间的逻辑关系
+# Tasks
+1. Analyze the structure and content of the report chapters
+2. Consider the report's narrative strategy and theme
+3. Design appropriate transition text for each chapter to make the report more coherent and fluid
+4. The transition text should:
+   - Naturally connect the preceding and following chapters
+   - Maintain the coherence of analytical thinking
+   - Be consistent with the overall narrative strategy of the report
+   - Be concise and clear, enhancing the readability of the report
+   - Highlight the logical relationships between chapters
 
-# 要求
-- 为报告中的每个章节（除第一章外）设计过渡文本
-- 过渡文本应包含在章节开始部分
-- 平均长度控制在2-3句话
-- 语言简练专业
-- 确保与章节的实际内容相符
+# Requirements
+- Design transition text for each chapter in the report (except the first chapter)
+- The transition text should be included at the beginning of the chapter
+- Average length should be controlled to 2-3 sentences
+- Language should be concise and professional
+- Ensure consistency with the actual content of the chapters
 
-# 输出格式
-请以JSON格式输出结果，包含以下结构:
+# Output Format
+Please output the results in JSON format, including the following structure:
 ```json
 {{
   "transitions": [
     {{
-      "chapter_idx": 1,  // 章节索引，从0开始，注意第一章不需要过渡文本
-      "transition_text": "在了解了XX情况后，我们接下来探索YY方面..."  // 过渡文本
+      "chapter_idx": 1,  // Chapter index, starting from 0, note that the first chapter does not need transition text
+      "transition_text": "After understanding the XX situation, we will now explore the YY aspect..."  // Transition text
     }},
     {{
       "chapter_idx": 2,
-      "transition_text": "从上一章的分析可以看出XX，这引导我们进一步思考YY..."
+      "transition_text": "From the analysis in the previous chapter, we can see XX, which leads us to further consider YY..."
     }}
-    // 其他章节的过渡文本...
+    // Transition text for other chapters...
   ]
 }}
 ``` 

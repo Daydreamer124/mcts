@@ -5,43 +5,75 @@ You are a data visualization expert. Your task is to analyze Python data visuali
 {CODE}
 ```
 
+## Data Context:
+{DATA_CONTEXT}
+
 ## Your Task:
 Analyze the code above and extract the following information:
-1. The type of chart being created (bar, line, scatter, pie, boxplot, histogram, etc.)
+1. The type of chart being created (bar, line, scatter, pie, histogram, etc.)
 2. The title of the chart (if specified)
-3. The fields used for x-axis and y-axis
+3. The fields used for visualization:
+   - For regular charts: x-axis and y-axis fields
+   - For histograms: ONLY the distribution field as x_field, y_field MUST be null
+   - For pie charts: category and value fields
 4. Any aggregation method used (sum, mean, count, etc.)
 5. Any grouping or coloring field (hue column)
 6. Whether the chart is stacked (for bar charts)
 7. All DataFrame columns referenced in the code
 8. Any derived columns created in the code (e.g., through binning or transformations)
 
-## Important Patterns to Look For:
-- If the code uses df.groupby('A')['B'].mean(), then 'A' is the x_field, 'B' is the y_field, and 'mean' is the aggregation method
-- If the code uses df['column'].value_counts(), then 'column' is the x_field and 'count' is the aggregation method
-- For pie charts, identify the category field and value field
-- If the code creates new columns with operations like df['New_Column'] = ..., or uses pd.cut() to bin data into categories, identify these as derived columns
-- For binning operations like pd.cut(data['Age'], bins=age_bins, labels=age_labels), the resulting column (e.g., 'Age_Group') should be identified as a derived column and potentially as the x_field if used in plotting
-- If the code uses plt.boxplot(), sns.boxplot(), or similar functions, identify the chart_type as "boxplot"
-- For boxplots, identify the categorical field used for grouping (usually x parameter) and the numerical field showing distribution (usually y parameter)
-- Note that boxplots display distribution data, so do not use any aggregation method (set as "none")
+## Important Rules:
+1. Field Names Format:
+   - ALWAYS use the EXACT column names as they appear in the Data Context
+   - NEVER modify column names from the Data Context
+   - If a column name appears in the Data Context as 'Customer_ID', use 'Customer_ID' (not 'Customer ID' or 'customer_id')
+   - If a column name appears in the Data Context as 'Purchase_Amount__USD_', use 'Purchase_Amount__USD_' (not 'Purchase Amount')
+   - Never convert underscores to spaces or vice versa
+   - Maintain the exact case (uppercase/lowercase) as used in the Data Context
+
+2. Pattern Recognition:
+   - For regular charts (bar/line/scatter):
+     - If code uses df.groupby('A')['B'].mean(), use:
+       * x_field: "A" (exact name from Data Context)
+       * y_field: "B" (exact name from Data Context)
+       * agg_method: "mean"
+     - If code uses df['column'].value_counts(), use:
+       * x_field: "column" (exact name from Data Context)
+       * y_field: null
+       * agg_method: "count"
+   - For histograms:
+     - If code uses plt.hist(df['column']), use:
+       * chart_type: "histogram"
+       * x_field: "column" (exact name from Data Context)
+       * y_field: null
+       * agg_method: "count"
+       * binning: {{bin_count: number_of_bins}} if specified
+   - For pie charts:
+     - Use exact column names from Data Context for both category and value fields
+   - For derived columns:
+     - Ensure source columns use exact names from Data Context
+     - Document any binning or transformation parameters
 
 ## Expected Output Format:
-Return a JSON object with the extracted configuration. Include only the fields that you can confidently determine from the code:
+Return a JSON object with the extracted configuration. Include only the fields that you can confidently determine from the code and match with Data Context:
 
 {{
-  "chart_type": "bar/line/scatter/pie/boxplot/histogram/etc",
+  "chart_type": "bar/line/scatter/pie/histogram/etc",
   "title": "Chart title if specified",
-  "x_field": "Field used for x-axis",
-  "y_field": "Field used for y-axis/values",
-  "agg_method": "Aggregation method if present (sum, mean, count, etc.) or 'none' for distribution plots like boxplots",
-  "hue_column": "Field used for grouping/coloring if present",
+  "x_field": "EXACT_COLUMN_NAME_FROM_DATA_CONTEXT",
+  "y_field": "EXACT_COLUMN_NAME_FROM_DATA_CONTEXT or null for histograms",
+  "agg_method": "Aggregation method if present (sum, mean, count, etc.)",
+  "hue_column": "EXACT_COLUMN_NAME_FROM_DATA_CONTEXT if present",
   "is_stacked": true/false,
-  "data_columns": ["list", "of", "referenced", "columns"],
+  "data_columns": ["list", "of", "EXACT_COLUMN_NAMES", "from", "Data_Context"],
+  "binning": {{
+    "bin_count": "number of bins if specified for histogram",
+    "bin_width": "bin width if specified"
+  }},
   "derived_columns": [
     {{
-      "name": "derived column name",
-      "source_column": "original column it's derived from",
+      "name": "new_column_name",
+      "source_column": "EXACT_COLUMN_NAME_FROM_DATA_CONTEXT",
       "derivation_type": "bin/transform/calculate",
       "parameters": {{
         "relevant": "parameters",
@@ -51,4 +83,9 @@ Return a JSON object with the extracted configuration. Include only the fields t
   ]
 }}
 
-Return ONLY the JSON without any additional text or explanations. 
+Return ONLY the JSON without any additional text or explanations. For histograms, make sure to:
+1. Set chart_type to "histogram"
+2. Use the distribution field as x_field
+3. Set y_field to null
+4. Set agg_method to "count"
+5. Include binning parameters if specified in the code 
