@@ -1,0 +1,228 @@
+
+🔍 MCTS 搜索开始
+==================================================
+开始时间: 2025-05-11 18:54:15
+Debug: 设置根节点迭代号为 1
+
+🌀 **MCTS 迭代 1/2**
+👉 选择 `Node` (深度 0) | 状态: ReportGenerationState.EMPTY
+Debug: 已更新选中节点迭代号为 1
+🔄 扩展节点...
+
+调试信息:
+当前状态: ReportGenerationState.EMPTY
+找到 1 个可用动作类型
+尝试执行动作: Query2Chapters
+🔍 正在生成chapters...
+❌ 统一生成框架出错: 'Query2Chapters_test'
+✅ 动作 Query2Chapters 生成了 1 个子节点
+✅ 共生成 1 个子节点
+🔄 模拟阶段...
+🔄 扩展节点...
+
+调试信息:
+当前状态: ReportGenerationState.a1
+找到 1 个可用动作类型
+尝试执行动作: Chapters2Tasks
+🔍 正在生成tasks...
+❌ 统一生成框架出错: 'Chapters2Tasks_test'
+✅ 动作 Chapters2Tasks 生成了 1 个子节点
+✅ 共生成 1 个子节点
+➡️ 模拟进入状态: a2 (深度 2)
+🔄 扩展节点...
+
+调试信息:
+当前状态: ReportGenerationState.a2
+找到 1 个可用动作类型
+尝试执行动作: Tasks2Charts
+✅ CLIP模型加载成功，可用于图表相似度检测
+✅ 图表相似度检测工具初始化成功
+✅ chart2vega工具初始化成功
+✅ 当前迭代号: 1
+✅ 动作 Tasks2Charts 生成了 1 个子节点
+✅ 共生成 1 个子节点
+➡️ 模拟进入状态: a3 (深度 3)
+🔄 扩展节点...
+
+调试信息:
+当前状态: ReportGenerationState.a3
+找到 2 个可用动作类型
+尝试执行动作: ReviseVis
+✅ 动作 ReviseVis 生成了 1 个子节点
+尝试执行动作: Charts2Captions
+
+🔄 开始处理图表说明生成任务 (A5)...
+没有需要生成说明的图表，返回原节点
+⚠️ 没有图表需要处理，设置节点状态为: ReportGenerationState.a5
+✅ 动作 Charts2Captions 生成了 1 个子节点
+✅ 共生成 2 个子节点
+➡️ 模拟进入状态: a5 (深度 4)
+🔄 扩展节点...
+
+调试信息:
+⚠️ 节点 ReportGenerationState.a5 在扩展前已有 1 个子节点，将清空这些子节点
+当前状态: ReportGenerationState.a5
+找到 1 个可用动作类型
+尝试执行动作: Captions2Summaries
+❌ 没有成功生成任何章节的候选总结，创建默认节点
+✅ 动作 Captions2Summaries 生成了 1 个子节点
+✅ 共生成 1 个子节点
+➡️ 模拟进入状态: FINALIZED (深度 5)
+✅ 模拟生成了完整报告！
+正在为 storyteller/output/iterations/iteration_1 生成所有风格的报告...
+--- HTML生成过程输出 ---
+正在处理: storyteller/output/iterations/iteration_1/report.md
+  生成 sidebar 模板...
+    处理 storyteller/output/iterations/iteration_1/report.md 使用 sidebar 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_1/report.md', '--output', 'storyteller/output/iterations/iteration_1/report_sidebar.html', '--template', 'sidebar']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 grid 模板...
+    处理 storyteller/output/iterations/iteration_1/report.md 使用 grid 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_1/report.md', '--output', 'storyteller/output/iterations/iteration_1/report_grid.html', '--template', 'grid']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 magazine 模板...
+    处理 storyteller/output/iterations/iteration_1/report.md 使用 magazine 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_1/report.md', '--output', 'storyteller/output/iterations/iteration_1/report_magazine.html', '--template', 'magazine']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 dashboard 模板...
+    处理 storyteller/output/iterations/iteration_1/report.md 使用 dashboard 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_1/report.md', '--output', 'storyteller/output/iterations/iteration_1/report_dashboard.html', '--template', 'dashboard']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+所有报告已使用所有模板样式处理完成！
+
+⚠️ 未找到PNG图表，无法计算质量奖励，使用默认奖励值: 5.00
+✓ 最终奖励: 5.00
+正在为 storyteller/output/iterations/iteration_1 生成所有风格的报告...
+--- HTML生成过程输出 ---
+正在处理: storyteller/output/iterations/iteration_1/report.md
+  生成 sidebar 模板...
+    处理 storyteller/output/iterations/iteration_1/report.md 使用 sidebar 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_1/report.md', '--output', 'storyteller/output/iterations/iteration_1/report_sidebar.html', '--template', 'sidebar']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 grid 模板...
+    处理 storyteller/output/iterations/iteration_1/report.md 使用 grid 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_1/report.md', '--output', 'storyteller/output/iterations/iteration_1/report_grid.html', '--template', 'grid']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 magazine 模板...
+    处理 storyteller/output/iterations/iteration_1/report.md 使用 magazine 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_1/report.md', '--output', 'storyteller/output/iterations/iteration_1/report_magazine.html', '--template', 'magazine']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 dashboard 模板...
+    处理 storyteller/output/iterations/iteration_1/report.md 使用 dashboard 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_1/report.md', '--output', 'storyteller/output/iterations/iteration_1/report_dashboard.html', '--template', 'dashboard']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+所有报告已使用所有模板样式处理完成！
+
+✅ 迭代 1 报告已保存到: storyteller/output/iterations/iteration_1
+   得分: 5.00
+📈 找到更好的完整报告！得分: 5.00
+   📊 `Q` 值更新: 5.0, 访问次数: 1
+--------------------------------------------------
+Debug: 设置根节点迭代号为 2
+
+🌀 **MCTS 迭代 2/2**
+👉 选择 `Node` (深度 1) | 状态: ReportGenerationState.a1
+Debug: 已更新选中节点迭代号为 2
+🔄 扩展节点...
+
+调试信息:
+当前状态: ReportGenerationState.a1
+找到 1 个可用动作类型
+尝试执行动作: Chapters2Tasks
+🔍 正在生成tasks...
+❌ 统一生成框架出错: 'Chapters2Tasks_test'
+✅ 动作 Chapters2Tasks 生成了 1 个子节点
+✅ 共生成 1 个子节点
+🔄 模拟阶段...
+🔄 扩展节点...
+
+调试信息:
+当前状态: ReportGenerationState.a2
+找到 1 个可用动作类型
+尝试执行动作: Tasks2Charts
+✅ CLIP模型加载成功，可用于图表相似度检测
+✅ 图表相似度检测工具初始化成功
+✅ chart2vega工具初始化成功
+✅ 当前迭代号: 2
+✅ 动作 Tasks2Charts 生成了 1 个子节点
+✅ 共生成 1 个子节点
+➡️ 模拟进入状态: a3 (深度 3)
+🔄 扩展节点...
+
+调试信息:
+当前状态: ReportGenerationState.a3
+找到 2 个可用动作类型
+尝试执行动作: ReviseVis
+✅ 动作 ReviseVis 生成了 1 个子节点
+尝试执行动作: Charts2Captions
+
+🔄 开始处理图表说明生成任务 (A5)...
+没有需要生成说明的图表，返回原节点
+⚠️ 没有图表需要处理，设置节点状态为: ReportGenerationState.a5
+✅ 动作 Charts2Captions 生成了 1 个子节点
+✅ 共生成 2 个子节点
+➡️ 模拟进入状态: a5 (深度 4)
+🔄 扩展节点...
+
+调试信息:
+⚠️ 节点 ReportGenerationState.a5 在扩展前已有 1 个子节点，将清空这些子节点
+当前状态: ReportGenerationState.a5
+找到 1 个可用动作类型
+尝试执行动作: Captions2Summaries
+❌ 没有成功生成任何章节的候选总结，创建默认节点
+✅ 动作 Captions2Summaries 生成了 1 个子节点
+✅ 共生成 1 个子节点
+➡️ 模拟进入状态: FINALIZED (深度 5)
+✅ 模拟生成了完整报告！
+正在为 storyteller/output/iterations/iteration_2 生成所有风格的报告...
+--- HTML生成过程输出 ---
+正在处理: storyteller/output/iterations/iteration_2/report.md
+  生成 sidebar 模板...
+    处理 storyteller/output/iterations/iteration_2/report.md 使用 sidebar 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_2/report.md', '--output', 'storyteller/output/iterations/iteration_2/report_sidebar.html', '--template', 'sidebar']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 grid 模板...
+    处理 storyteller/output/iterations/iteration_2/report.md 使用 grid 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_2/report.md', '--output', 'storyteller/output/iterations/iteration_2/report_grid.html', '--template', 'grid']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 magazine 模板...
+    处理 storyteller/output/iterations/iteration_2/report.md 使用 magazine 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_2/report.md', '--output', 'storyteller/output/iterations/iteration_2/report_magazine.html', '--template', 'magazine']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 dashboard 模板...
+    处理 storyteller/output/iterations/iteration_2/report.md 使用 dashboard 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_2/report.md', '--output', 'storyteller/output/iterations/iteration_2/report_dashboard.html', '--template', 'dashboard']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+所有报告已使用所有模板样式处理完成！
+
+⚠️ 未找到PNG图表，无法计算质量奖励，使用默认奖励值: 5.00
+✓ 最终奖励: 5.00
+正在为 storyteller/output/iterations/iteration_2 生成所有风格的报告...
+--- HTML生成过程输出 ---
+正在处理: storyteller/output/iterations/iteration_2/report.md
+  生成 sidebar 模板...
+    处理 storyteller/output/iterations/iteration_2/report.md 使用 sidebar 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_2/report.md', '--output', 'storyteller/output/iterations/iteration_2/report_sidebar.html', '--template', 'sidebar']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 grid 模板...
+    处理 storyteller/output/iterations/iteration_2/report.md 使用 grid 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_2/report.md', '--output', 'storyteller/output/iterations/iteration_2/report_grid.html', '--template', 'grid']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 magazine 模板...
+    处理 storyteller/output/iterations/iteration_2/report.md 使用 magazine 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_2/report.md', '--output', 'storyteller/output/iterations/iteration_2/report_magazine.html', '--template', 'magazine']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+  生成 dashboard 模板...
+    处理 storyteller/output/iterations/iteration_2/report.md 使用 dashboard 时出错: Command '['python', 'storyteller/algorithm/utils/generate_report_from_md.py', 'storyteller/output/iterations/iteration_2/report.md', '--output', 'storyteller/output/iterations/iteration_2/report_dashboard.html', '--template', 'dashboard']' returned non-zero exit status 2.
+    错误详情: python: can't open file '/Users/zhangzhiyang/mcts/storyteller/storyteller/algorithm/utils/generate_report_from_md.py': [Errno 2] No such file or directory
+
+所有报告已使用所有模板样式处理完成！
+
+✅ 迭代 2 报告已保存到: storyteller/output/iterations/iteration_2
+   得分: 5.00
+   📊 `Q` 值更新: 5.0, 访问次数: 1
+--------------------------------------------------
+
+✅ MCTS 搜索完成！
+==================================================
+🎯 返回最佳完整报告 | 得分: 5.00

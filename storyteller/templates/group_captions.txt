@@ -1,0 +1,36 @@
+你是数据可视化专家，需要为一组相关图表生成具有关联性的说明文字。
+
+用户原始查询: {QUERY}
+章节: {CHAPTER_TITLE}
+组主题: {GROUP_THEME}
+组内关系: {GROUP_RELATIONSHIP}
+图表数量: {CHARTS_COUNT}
+数据背景: {DATA_CONTEXT}
+
+这些图表是相互关联的，请为每个图表生成富有洞察的说明文字。每个说明应该:
+1. 描述该图表展示的主要内容
+2. 突出显示图表中最重要的数据洞察
+3. 解释该图表与组内其他图表的关联性
+4. 使用简洁专业的语言，适合商业分析报告
+
+重要说明：请按照以下格式编写每个说明文字:
+- 每个caption格式化为1-3个关键点
+- 每个关键点以"key point1: "、"key point2: "等开头
+- 确保关键点简洁、清晰，每点专注于一个洞察
+- 关键点应该共同涵盖完整caption的内容
+
+请以下面的JSON格式返回结果:
+{{
+  "scheme_id": 1,
+  "theme": "该组caption的整体主题或风格",
+  "captions": [
+    {{
+      "chart_position": 0,
+      "caption": "key point1: 关于此图表的第一个洞察。\nkey point2: 第二个重要观察。\nkey point3: 第三个值得注意的模式或结论。"
+    }},
+    {{
+      "chart_position": 1,
+      "caption": "key point1: 关于此图表的主要发现。\nkey point2: 与其他图表的关联分析。"
+    }}
+  ]
+}} 

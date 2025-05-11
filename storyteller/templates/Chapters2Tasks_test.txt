@@ -30,7 +30,7 @@ Instead, consider common analytical purposes such as:
 #### Chart Type Guidelines:
 You may use any chart types that best suit the analytical goal, including:
 
-- Bar Chart, Stacked Bar Chart,Line Chart, Scatter Plot, Boxplot, Histogram, Pie Chart, Heatmap,Violin Chart
+- Bar Chart, Stacked Bar Chart,Line Chart, Scatter Plot, Boxplot, Histogram, Pie Chart, Heatmap
 - **Table** (for showing ranked values, category combinations, or detailed comparisons)
 
 > Try to diversify chart types across chapters. Avoid using the same chart type repeatedly unless strongly justified.
@@ -43,7 +43,7 @@ You may use any chart types that best suit the analytical goal, including:
 - For each chapter:
   - Analyze the chapter title and the original query
   - Use the Data Context (especially fields_info and categorical_details) to determine the most relevant fields for analysis
-  - Propose **1 to 4** visualization tasks per chapter
+  - Propose **1 to 3** visualization tasks per chapter
   - For each task, specify:
     - A short, clear `"task_id"` summarizing the task
     - A detailed `"task_description"` including:
@@ -99,8 +99,8 @@ Example format (do not include the backticks):
         }},
         {{
           "task_id": "Review score distribution by age",
-          "task_description": "Draw a violin plot with 'Age' groups on the X-axis and 'Review_Rating' on the Y-axis to analyze satisfaction differences across age ranges.",
-          "chart_type": ["Violin Plot"]
+          "task_description": "Draw a table plot with 'Age' groups on the X-axis and 'Review_Rating' on the Y-axis to analyze satisfaction differences across age ranges.",
+          "chart_type": ["table Plot"]
         }}
       ]
     }}

@@ -22,6 +22,7 @@ from storyteller.algorithm.utils.unified_framework import unified_generation_fra
 import time
 from tqdm import tqdm
 import glob
+import random
 
 
 
@@ -1277,6 +1278,48 @@ class Charts2Captions(DataStorytellingAction):
     def __init__(self):
         super().__init__("A5", "根据所有可视化图表生成所有对应Caption")
     
+    def _filter_successful_charts(self, chapter):
+        """筛选出章节中成功生成的图表
+        
+        参数:
+            chapter: 章节对象
+            
+        返回:
+            successful_charts: 成功生成的图表列表
+        """
+        successful_charts = []
+        
+        # 检查章节是否有图表
+        if not hasattr(chapter, 'charts') or not chapter.charts:
+            return successful_charts
+            
+        # 遍历章节中的所有图表
+        for chart in chapter.charts:
+            # 获取图表任务ID
+            chart_task_id = getattr(chart, 'task_id', '')
+            task_success = False
+            
+            # 检查图表是否已有caption
+            has_caption = hasattr(chart, 'caption') and chart.caption
+            
+            # 从可视化任务中查找与图表关联的任务状态
+            if hasattr(chapter, 'visualization_tasks'):
+                for task in chapter.visualization_tasks:
+                    if task.get('task_id') == chart_task_id:
+                        task_success = task.get('visualization_success', False)
+                        break
+            
+            # 只添加成功生成且没有caption的图表
+            if task_success and not has_caption:
+                successful_charts.append(chart)
+                print(f"✓ 图表 {chart_task_id} 符合处理条件")
+            elif not task_success:
+                print(f"⚠️ 跳过图表 {chart_task_id}，因为它的生成状态为失败")
+            elif has_caption:
+                print(f"ℹ️ 跳过图表 {chart_task_id}，因为它已有caption")
+                
+        return successful_charts
+    
     def _get_image_base64(self, image_path: str) -> str:
         """将图片转换为 base64 编码"""
         try:
@@ -1292,10 +1335,12 @@ class Charts2Captions(DataStorytellingAction):
             return None
 
     def call_vision_api(self, prompt, image_base64_list, **kwargs):
-        """统一处理视觉API调用，支持单个或多个图像"""
+        """统一处理视觉API调用，支持单个或多个图像，自动处理限流问题"""
         import os
         import requests
         import json
+        import time
+        import random
         
         # 获取环境变量
         base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -1353,50 +1398,89 @@ class Charts2Captions(DataStorytellingAction):
         
         print(f"🔄 调用视觉API，模型: {model}, 温度: {temperature}")
         
-        # 调用API
-        try:
-            # 创建本地会话对象，而不是使用全局会话
-            session = requests.Session()
-            
-            # 设置超时
-            timeout = kwargs.get("timeout", 60)
-            
-            # 发送请求
-            response = session.post(url, headers=headers, json=data, timeout=timeout)
-            response_json = response.json()
-            
-            # 关闭会话
-            session.close()
-            
-            if 'choices' in response_json and response_json['choices']:
-                return response_json['choices'][0]['message']['content'].strip()
-            else:
-                print(f"❌ API返回错误或无响应: {response_json}")
-        except Exception as e:
-            print(f"❌ API调用失败: {str(e)}")
-            traceback.print_exc()
+        # 配置重试参数
+        max_retries = kwargs.get("max_retries", 5)  # 增加最大重试次数
+        base_delay = kwargs.get("base_delay", 3)   # 初始等待时间（秒）
+        max_delay = kwargs.get("max_delay", 60)    # 最大等待时间（秒）
+        timeout = kwargs.get("timeout", 60)        # 请求超时时间
         
+        # 实现指数退避重试
+        for retry in range(max_retries):
+            try:
+                # 创建本地会话对象，而不是使用全局会话
+                session = requests.Session()
+                
+                # 发送请求
+                response = session.post(url, headers=headers, json=data, timeout=timeout)
+                response_json = response.json()
+                
+                # 关闭会话
+                session.close()
+                
+                # 处理响应
+                if 'choices' in response_json and response_json['choices']:
+                    return response_json['choices'][0]['message']['content'].strip()
+                
+                # 检查是否是限流错误 (429)
+                if 'error' in response_json:
+                    error = response_json['error']
+                    error_code = error.get('code', '')
+                    error_type = error.get('type', '')
+                    error_message = error.get('message', '')
+                    
+                    # 如果是限流错误，应用指数退避策略
+                    if error_code == '429' or '429' in error_message or 'rate limit' in error_message.lower():
+                        # 打印限流错误
+                        print(f"❌ API返回错误或无响应: {response_json}")
+                        
+                        # 解析等待时间（如果API提供）
+                        wait_time = None
+                        import re
+                        time_matches = re.findall(r'retry after (\d+)', error_message.lower())
+                        if time_matches and len(time_matches) > 0:
+                            try:
+                                wait_time = int(time_matches[0])
+                            except ValueError:
+                                pass
+                        
+                        # 如果没有明确指定等待时间，使用指数退避策略
+                        if wait_time is None:
+                            # 计算退避时间，加入随机抖动以避免同步请求
+                            delay = min(max_delay, base_delay * (2 ** retry)) + random.uniform(0, 2)
+                        else:
+                            # 使用API返回的等待时间加2秒缓冲
+                            delay = wait_time + 2
+                            
+                        if retry < max_retries - 1:  # 最后一次重试不需要等待
+                            print(f"⚠️ API返回限流错误，将在 {delay:.1f} 秒后重试... (尝试 {retry+1}/{max_retries})")
+                            time.sleep(delay)
+                            continue
+                    else:
+                        print(f"❌ API返回错误: {error_type} - {error_message}")
+                else:
+                    print(f"❌ API返回未知格式响应: {response_json}")
+                
+            except Exception as e:
+                # 处理网络异常等其他错误
+                print(f"❌ API调用失败: {str(e)}")
+                
+                # 只有在非最后一次重试时才等待
+                if retry < max_retries - 1:
+                    # 计算退避时间
+                    delay = min(max_delay, base_delay * (2 ** retry)) + random.uniform(0, 2)
+                    print(f"⚠️ 将在 {delay:.1f} 秒后重试... (尝试 {retry+1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                
+                traceback.print_exc()
+        
+        print(f"❌ 已达到最大重试次数 ({max_retries})，API调用失败")
         return None
     
     def generate_chapter_caption_schemes(self, node, chapter, chapter_idx, charts, num_schemes=3, llm_kwargs=None):
         """为单个章节的所有图表生成多套说明方案，具有重试机制"""
         # 过滤出成功生成的图表
-        successful_charts = []
-        for chart in charts:
-            # 查找对应的visualization_task
-            chart_task_id = getattr(chart, 'task_id', '')
-            task_success = False
-            
-            # 从可视化任务中查找与图表关联的任务状态
-            if hasattr(chapter, 'visualization_tasks'):
-                for task in chapter.visualization_tasks:
-                    if task.get('task_id') == chart_task_id:
-                        task_success = task.get('visualization_success', False)
-                        break
-            
-            # 只添加成功生成的图表
-            if task_success:
-                successful_charts.append(chart)
+        successful_charts = self._filter_successful_charts(chapter)
         
         # 如果章节内没有成功生成的图表，直接返回空
         if not successful_charts:
@@ -1509,7 +1593,7 @@ class Charts2Captions(DataStorytellingAction):
                 if retry < max_retries - 1:
                     print("将在1秒后重试...")
                     import time
-                    time.sleep(1)
+                    time.sleep(5)
                 else:
                     print("已达到最大重试次数，无法生成有效的说明方案")
                     return []
@@ -1520,7 +1604,7 @@ class Charts2Captions(DataStorytellingAction):
                 if retry < max_retries - 1:
                     print("将在1秒后重试...")
                     import time
-                    time.sleep(1)
+                    time.sleep(5)
                 else:
                     print("已达到最大重试次数，无法生成有效的说明方案")
                     return []
@@ -1613,7 +1697,7 @@ class Charts2Captions(DataStorytellingAction):
         
         return json_str
     
-    def generate_combined_nodes(self, node, all_chapter_schemes, max_nodes=3):
+    def generate_combined_nodes(self, node, all_chapter_schemes, all_chapter_groups=None, max_nodes=3):
         """生成子节点组合 - 使用简单策略：全部章节使用第n套方案"""
         if not all_chapter_schemes:
             return []
@@ -1631,7 +1715,8 @@ class Charts2Captions(DataStorytellingAction):
                 child_node.parent_node = node
                 child_node.parent_action = self
                 child_node.depth = node.depth + 1
-                child_node.node_type = ReportGenerationState.a5
+                child_node.node_type = ReportGenerationState.a5  # 正确设置节点状态为a5
+                print(f"📌 创建方案{scheme_idx+1}的子节点，设置状态为: {child_node.node_type}")
                 
                 caption_applied = False  # 跟踪是否应用了任何说明
                 
@@ -1649,6 +1734,12 @@ class Charts2Captions(DataStorytellingAction):
                             chapter = child_node.report.chapters[chapter_idx]
                             
                             print(f"🔄 为子节点{scheme_idx+1}应用章节{chapter_idx+1}的方案{scheme.get('scheme_id', scheme_idx+1)}")
+                            
+                            # 如果有分组信息，也添加到章节对象中
+                            if all_chapter_groups and chapter_idx in all_chapter_groups:
+                                # 将分组信息存储到章节对象
+                                chapter.chart_groups = all_chapter_groups[chapter_idx]
+                                print(f"✅ 为章节{chapter_idx+1}添加{len(chapter.chart_groups)}个图表组信息")
                             
                             # 应用此方案中的所有图表说明
                             for caption_info in scheme.get("captions", []):
@@ -1671,85 +1762,123 @@ class Charts2Captions(DataStorytellingAction):
                 
                 if caption_applied:  # 只有当应用了说明时才添加节点
                     child_node.caption_strategy = f"统一方案{scheme_idx+1}"
+                    # 再次确认状态设置正确
+                    child_node.node_type = ReportGenerationState.a5
                     children_nodes.append(child_node)
-                    print(f"✅ 成功创建子节点 {scheme_idx+1}，使用统一方案 {scheme_idx+1}")
+                    print(f"✅ 成功创建子节点 {scheme_idx+1}，使用统一方案 {scheme_idx+1}，最终状态为: {child_node.node_type}")
+                else:
+                    print(f"⚠️ 子节点 {scheme_idx+1} 未应用任何caption，跳过此节点")
 
             except Exception as e:
                 print(f"❌ 创建方案 {scheme_idx+1} 的子节点时出错: {str(e)}")
                 traceback.print_exc()
                 continue
         
+        # 最后一次确认所有子节点状态正确
+        for i, child in enumerate(children_nodes):
+            if child.node_type != ReportGenerationState.a5:
+                print(f"⚠️ 检测到子节点 {i+1} 状态不正确，正在修复...")
+                child.node_type = ReportGenerationState.a5
+        
+        if children_nodes:
+            print(f"📊 生成了 {len(children_nodes)} 个子节点，所有节点状态设置为: {ReportGenerationState.a5}")
+        
         return children_nodes
 
     def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
-        """为图表生成说明文字，按章节处理并生成多个子节点"""
+        """为图表生成说明文字，使用新的评估和分组方法为组图表生成关联性caption"""
+        print("\n🔄 开始处理图表说明生成任务 (A5)...")
+        
         # 收集需要处理的章节及其图表
         chapters_with_charts = []
         for chapter_idx, chapter in enumerate(node.report.chapters):
-            if not hasattr(chapter, 'charts') or not chapter.charts:
-                continue
-                
-            # 收集需要生成说明的图表
-            charts_needing_captions = []
-            for chart in chapter.charts:
-                if not hasattr(chart, 'caption') or not chart.caption:
-                    # 查找该图表对应的任务状态
-                    chart_task_id = getattr(chart, 'task_id', '')
-                    task_success = False
-                    
-                    # 从可视化任务中查找与图表关联的任务状态
-                    if hasattr(chapter, 'visualization_tasks'):
-                        for task in chapter.visualization_tasks:
-                            if task.get('task_id') == chart_task_id:
-                                task_success = task.get('visualization_success', False)
-                                break
-                # 只处理成功生成的图表
-                if task_success:
-                    charts_needing_captions.append(chart)
-                else:
-                    print(f"⚠️ 跳过图表 {chart_task_id}，因为它的生成状态为失败")
-            if charts_needing_captions:
+            # 筛选出成功生成且需要caption的图表
+            successful_charts = self._filter_successful_charts(chapter)
+            
+            if successful_charts:
                 chapters_with_charts.append({
                     "chapter_idx": chapter_idx,
                     "chapter": chapter,
-                    "charts": charts_needing_captions
+                    "charts": successful_charts
                 })
-                print(f"✅ 章节 {chapter_idx+1} 有 {len(charts_needing_captions)} 个图表需要生成说明")
+                print(f"✅ 章节 {chapter_idx+1} 有 {len(successful_charts)} 个图表需要生成说明")
         
         if not chapters_with_charts:
             # 没有需要处理的图表，返回原节点
             print("没有需要生成说明的图表，返回原节点")
-            node.node_type = ReportGenerationState.a5
-            return [node]
+            child_node = copy.deepcopy(node)  # 创建一个副本
+            child_node.parent_node = node
+            child_node.parent_action = self
+            child_node.depth = node.depth + 1
+            child_node.node_type = ReportGenerationState.a5  # 确保正确设置状态为a5
+            print(f"⚠️ 没有图表需要处理，设置节点状态为: {child_node.node_type}")
+            return [child_node]
         
-        # 对每个章节生成多套说明方案
+        # 对每个章节生成说明
         all_chapter_schemes = []
+        all_chapter_groups = {}  # 存储每个章节的图表分组信息
+        
         for chapter_info in chapters_with_charts:
             chapter_idx = chapter_info["chapter_idx"]
             chapter = chapter_info["chapter"]
             charts = chapter_info["charts"]
             
-            # 为该章节所有图表生成多套说明方案
-            chapter_schemes = self.generate_chapter_caption_schemes(
+            # 尝试新的批量评估和分组方式
+            try:
+                print(f"\n🔄 使用新方法处理章节 {chapter_idx+1}")
+                
+                # 批量评估和分组图表
+                evaluation_result = self.evaluate_and_group_charts(node, chapter, charts)
+                
+                if evaluation_result and "chart_groups" in evaluation_result:
+                    # 使用新方法 - 为每组图表生成关联性caption
+                    chart_groups = evaluation_result["chart_groups"]
+                    print(f"✅ 章节 {chapter_idx+1} 的图表已分为 {len(chart_groups)} 组")
+                    
+                    # 保存分组信息
+                    all_chapter_groups[chapter_idx] = chart_groups
+                    
+                    # 为每组图表生成caption
+                    chapter_schemes = self.generate_group_captions(node, chapter, chart_groups, charts)
+                    
+                    if chapter_schemes:
+                        all_chapter_schemes.append({
+                            "chapter_idx": chapter_idx,
+                            "schemes": chapter_schemes
+                        })
+                        print(f"✅ 章节 {chapter_idx+1} 成功生成 {len(chapter_schemes)} 套关联性说明方案")
+                        continue
+                    else:
+                        print(f"⚠️ 章节 {chapter_idx+1} 的组级caption生成失败，将尝试回退到传统方法")
+                else:
+                    print(f"⚠️ 章节 {chapter_idx+1} 的评估和分组失败，将尝试回退到传统方法")
+            except Exception as e:
+                print(f"❌ 使用新方法处理章节 {chapter_idx+1} 时出错: {str(e)}")
+                print("⚠️ 将尝试回退到传统方法")
+                traceback.print_exc()
+            
+            # 回退策略：使用传统方法为每个图表单独生成caption
+            print(f"🔄 使用传统方法处理章节 {chapter_idx+1}")
+            traditional_schemes = self.generate_chapter_caption_schemes(
                 node,
                 chapter, 
                 chapter_idx,
                 charts, 
-                num_schemes=3,  # 为每个章节生成3种不同的说明方案
+                num_schemes=3,
                 llm_kwargs=llm_kwargs
             )
             
-            if chapter_schemes:
+            if traditional_schemes:
                 all_chapter_schemes.append({
                     "chapter_idx": chapter_idx,
-                    "schemes": chapter_schemes
+                    "schemes": traditional_schemes
                 })
-                print(f"✅ 章节 {chapter_idx} 成功生成 {len(chapter_schemes)} 套说明方案")
+                print(f"✅ 章节 {chapter_idx+1} 成功使用传统方法生成 {len(traditional_schemes)} 套说明方案")
             else:
-                print(f"❌ 章节 {chapter_idx} 生成说明方案失败")
+                print(f"❌ 章节 {chapter_idx+1} 的说明生成完全失败")
         
-        # 生成子节点组合 - 使用简单策略：全部章节使用第n套方案
-        children_nodes = self.generate_combined_nodes(node, all_chapter_schemes)
+        # 生成子节点组合
+        children_nodes = self.generate_combined_nodes(node, all_chapter_schemes, all_chapter_groups)
         
         if not children_nodes:
             # 如果没有成功生成子节点，创建一个基本节点
@@ -1758,11 +1887,299 @@ class Charts2Captions(DataStorytellingAction):
             child_node.parent_node = node
             child_node.parent_action = self
             child_node.depth = node.depth + 1
-            child_node.node_type = ReportGenerationState.a5
+            child_node.node_type = ReportGenerationState.a5  # 确保正确设置状态为a5
+            print(f"⚠️ 无法生成有效子节点，设置节点状态为: {child_node.node_type}")
             return [child_node]
         
-        print(f"✅ 成功生成 {len(children_nodes)} 个子节点")
+        # 确保所有子节点状态都设置为a5
+        for child_node in children_nodes:
+            child_node.node_type = ReportGenerationState.a5
+            
+        print(f"✅ 成功生成 {len(children_nodes)} 个子节点，所有节点状态设置为: {ReportGenerationState.a5}")
         return children_nodes
+
+    def evaluate_and_group_charts(self, node, chapter, charts):
+        """批量评估章节内所有图表并进行分组
+        
+        参数:
+            node: MCTS节点
+            chapter: 章节对象
+            charts: 图表列表
+            
+        返回:
+            result: 包含评估结果和分组信息的字典，如果失败则返回None
+        """
+        try:
+            # 收集图表图像和信息
+            chart_images = []
+            charts_info = ""
+            
+            for i, chart in enumerate(charts):
+                image_base64 = self._get_image_base64(chart.url)
+                if image_base64:
+                    chart_images.append(image_base64)
+                    charts_info += f"\n图表{i}: 类型: {chart.chart_type}, 任务: {chart.task_id}"
+                else:
+                    print(f"❌ 无法获取图表 {i} ({chart.task_id}) 的图像数据")
+            
+            if not chart_images:
+                print("❌ 没有可用的图表图像数据")
+                return None
+                
+            # 构建评估和分组提示词
+            chapter_title = getattr(chapter, 'title', f'未命名章节')
+            prompt_args = {
+                "CHAPTER_TITLE": chapter_title,
+                "CHARTS_INFO": charts_info,
+                "CHARTS_COUNT": len(charts),
+                "QUERY": node.original_query,
+                "DATA_CONTEXT": node.report.data_context
+            }
+            
+            prompt = get_prompt("chart_evaluation_grouping", prompt_args)
+            
+            # 实现重试机制
+            max_retries = 3
+            for retry in range(max_retries):
+                try:
+                    # 调用API进行批量评估和分组
+                    print(f"🔄 正在评估和分组章节 \"{chapter_title}\" 的 {len(charts)} 个图表... (尝试 {retry+1}/{max_retries})")
+                    
+                    # 调整温度参数，随着重试次数增加降低温度以获得更一致的结果
+                    temperature = max(0.2, 0.7 - retry * 0.2)
+                    response = self.call_vision_api(prompt, chart_images, temperature=temperature)
+                    
+                    if not response:
+                        print(f"❌ API返回为空 (尝试 {retry+1}/{max_retries})")
+                        if retry < max_retries - 1:
+                            print("将在2秒后重试...")
+                            import time
+                            time.sleep(2)
+                            continue
+                        return None
+                        
+                    # 解析结果
+                    print(f"🔍 LLM响应片段: {response[:200]}...")
+                    result = self.extract_json_from_text(response)
+                    
+                    if result and "chart_evaluations" in result and "chart_groups" in result:
+                        # 记录评估结果
+                        evaluations = result["chart_evaluations"]
+                        print(f"✅ 成功评估 {len(evaluations)} 个图表")
+                        for eval_info in evaluations:
+                            chart_idx = eval_info.get("chart_idx")
+                            if 0 <= chart_idx < len(charts):
+                                has_insight = eval_info.get("has_insight", False)
+                                insight_score = eval_info.get("insight_score", 0)
+                                status = "✅ 有价值" if has_insight else "⚠️ 无价值"
+                                print(f"  图表 {chart_idx}: {status} (分数: {insight_score})")
+                        
+                        # 记录分组结果
+                        groups = result["chart_groups"]
+                        print(f"✅ 成功将图表分为 {len(groups)} 组")
+                        for group in groups:
+                            group_id = group.get("group_id")
+                            theme = group.get("theme", "未命名主题")
+                            chart_indices = group.get("chart_indices", [])
+                            print(f"  - 组 {group_id}: {theme} (包含 {len(chart_indices)} 个图表: {chart_indices})")
+                        
+                        return result
+                    else:
+                        # 格式错误，提供重试提示
+                        error_msg = "解析结果不完整" if result else "未能解析出有效的JSON结果"
+                        print(f"❌ {error_msg} (尝试 {retry+1}/{max_retries})")
+                        
+                        if retry < max_retries - 1:
+                            print("将在2秒后重试...")
+                            import time
+                            time.sleep(2)
+                        else:
+                            print("已达到最大重试次数，评估分组失败")
+                            return None
+                            
+                except Exception as e:
+                    print(f"❌ API调用或解析出错: {str(e)} (尝试 {retry+1}/{max_retries})")
+                    if retry < max_retries - 1:
+                        print("将在2秒后重试...")
+                        import time
+                        time.sleep(2)
+                    else:
+                        print("已达到最大重试次数，评估分组失败")
+                        traceback.print_exc()
+                        return None
+                        
+        except Exception as e:
+            print(f"❌ 评估和分组图表时出错: {str(e)}")
+            traceback.print_exc()
+            return None
+
+    def generate_group_captions(self, node, chapter, chart_groups, charts):
+        """为每组图表生成关联性caption
+        
+        参数:
+            node: MCTS节点
+            chapter: 章节对象
+            chart_groups: 图表分组信息
+            charts: 图表列表
+            
+        返回:
+            schemes: 包含caption方案的列表，如果失败则返回空列表
+        """
+        try:
+            # 存储所有生成的方案
+            schemes = []
+            
+            # 获取章节标题
+            chapter_title = getattr(chapter, 'title', '未命名章节')
+            print(f"\n🔄 为章节 \"{chapter_title}\" 的图表组生成caption")
+            
+            # 处理每个图表组
+            for group in chart_groups:
+                # 跳过无价值图表组
+                group_theme = group.get("theme", "")
+                if "无价值" in group_theme.lower() or "无洞察" in group_theme.lower():
+                    print(f"⚠️ 跳过无价值图表组: {group_theme}")
+                    continue
+                    
+                # 获取组ID和关系描述
+                group_id = group.get("group_id", 0)
+                group_relationship = group.get("relationship", "这些图表展示了相关的数据")
+                
+                # 获取该组所有图表索引
+                chart_indices = group.get("chart_indices", [])
+                if not chart_indices:
+                    print(f"⚠️ 组 {group_id} 没有图表，跳过")
+                    continue
+                
+                print(f"🔄 处理组 {group_id}: {group_theme} (包含 {len(chart_indices)} 个图表)")
+                
+                # 收集组内图表图像
+                group_charts = []
+                group_images = []
+                
+                for idx in chart_indices:
+                    if 0 <= idx < len(charts):
+                        chart = charts[idx]
+                        group_charts.append(chart)
+                        
+                        image_base64 = self._get_image_base64(chart.url)
+                        if image_base64:
+                            group_images.append(image_base64)
+                        else:
+                            print(f"❌ 无法获取组 {group_id} 中图表 {idx} 的图像数据")
+                
+                if not group_images:
+                    print(f"❌ 组 {group_id} 没有可用的图表图像，跳过")
+                    continue
+                
+                # 构建组级caption提示词
+                prompt_args = {
+                    "QUERY": node.original_query,
+                    "CHAPTER_TITLE": chapter_title,
+                    "GROUP_THEME": group_theme,
+                    "GROUP_RELATIONSHIP": group_relationship,
+                    "CHARTS_COUNT": len(group_charts),
+                    "DATA_CONTEXT": node.report.data_context
+                }
+                
+                prompt = get_prompt("group_captions", prompt_args)
+                
+                # 实现重试机制
+                max_retries = 3
+                for retry in range(max_retries):
+                    try:
+                        # 调用API生成caption
+                        print(f"🔄 为组 {group_id} 生成caption... (尝试 {retry+1}/{max_retries})")
+                        
+                        # 调整温度参数，随着重试次数增加降低温度
+                        temperature = max(0.2, 0.7 - retry * 0.2)
+                        response = self.call_vision_api(prompt, group_images, temperature=temperature)
+                        
+                        if not response:
+                            print(f"❌ 组 {group_id} 的API返回为空 (尝试 {retry+1}/{max_retries})")
+                            if retry < max_retries - 1:
+                                print("将在2秒后重试...")
+                                import time
+                                time.sleep(2)
+                                continue
+                            break
+                            
+                        # 解析结果
+                        print(f"🔍 LLM响应片段: {response[:200]}...")
+                        caption_result = self.extract_json_from_text(response)
+                        
+                        if caption_result and "captions" in caption_result:
+                            # 创建caption方案
+                            scheme = {
+                                "scheme_id": len(schemes) + 1,
+                                "theme": caption_result.get("theme", group_theme),
+                                "captions": []
+                            }
+                            
+                            # 处理每个图表的caption
+                            captions = caption_result["captions"]
+                            print(f"✅ 成功为组 {group_id} 生成 {len(captions)} 个caption")
+                            
+                            for i, chart_idx in enumerate(chart_indices):
+                                if i < len(captions):
+                                    caption_entry = captions[i]
+                                    # 提取caption文本，优先使用chart_position匹配
+                                    caption_text = ""
+                                    
+                                    # 查找是否有position匹配的caption
+                                    for entry in captions:
+                                        if entry.get("chart_position") == i:
+                                            caption_text = entry.get("caption", "")
+                                            break
+                                    
+                                    # 如果没找到，使用顺序匹配
+                                    if not caption_text:
+                                        caption_text = caption_entry.get("caption", "")
+                                    
+                                    scheme["captions"].append({
+                                        "chart_idx": chart_idx,
+                                        "caption": caption_text
+                                    })
+                                    
+                            # 添加到方案列表
+                            schemes.append(scheme)
+                            # 成功生成，跳出重试循环
+                            break
+                            
+                        else:
+                            # 格式错误，提供重试提示
+                            error_msg = "解析结果不完整" if caption_result else "未能解析出有效的JSON结果"
+                            print(f"❌ {error_msg} (尝试 {retry+1}/{max_retries})")
+                            
+                            if retry < max_retries - 1:
+                                print("将在2秒后重试...")
+                                import time
+                                time.sleep(2)
+                            else:
+                                print(f"❌ 已达到最大重试次数，组 {group_id} 的caption生成失败")
+                                
+                    except Exception as e:
+                        print(f"❌ 组 {group_id} 的caption生成出错: {str(e)} (尝试 {retry+1}/{max_retries})")
+                        if retry < max_retries - 1:
+                            print("将在2秒后重试...")
+                            import time
+                            time.sleep(2)
+                        else:
+                            print(f"❌ 已达到最大重试次数，组 {group_id} 的caption生成失败")
+                            traceback.print_exc()
+            
+            # 返回所有生成的方案
+            if schemes:
+                print(f"✅ 成功为 {len(schemes)} 个图表组生成caption方案")
+            else:
+                print("⚠️ 未能为任何图表组生成caption方案")
+                
+            return schemes
+                
+        except Exception as e:
+            print(f"❌ 生成组级caption时出错: {str(e)}")
+            traceback.print_exc()
+            return []
 
 
 class Captions2Summaries(DataStorytellingAction):

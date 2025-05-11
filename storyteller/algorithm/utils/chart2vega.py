@@ -17,6 +17,10 @@ def get_python_to_vegalite_prompt(python_code: str) -> str:
 你是一个专精数据可视化的AI助手，擅长将Python可视化代码转换为Vega-Lite规范。
 
 请分析以下Python可视化代码，并将其直接转换为等效的Vega-Lite JSON配置。
+Python可视化代码:
+```
+{python_code}
+```
 请仔细分析代码的数据处理、图表类型、映射、坐标轴、标题等设置，确保Vega-Lite配置能够完整再现Python代码的可视化效果。
 
 【格式要求】请严格遵循标准JSON格式：
@@ -45,23 +49,65 @@ def get_python_to_vegalite_prompt(python_code: str) -> str:
 5. 创建完整的Vega-Lite JSON规范
 
 【重要：编码处理语法指南】
-在Vega-Lite中，数据转换和聚合主要在encoding对象内部处理：
+在Vega-Lite中，数据转换和聚合主要通过两种方式实现：
+1. 使用encoding对象中的各种属性，适合简单操作
+2. 使用transform数组，适合复杂操作
 
-1. 【分箱操作】应该放在encoding里的字段定义中：
+【特别关注：分箱(bin)操作处理】
+当处理类似pandas.cut()的自定义分箱操作时，有两种主要转换方法：
+
+1. 【简单均匀分箱】应该在encoding中的字段定义里使用bin属性:
 ```
 "encoding": {{
   "x": {{
-    "field": "IMDB Rating",
-    "bin": true,
-    "type": "ordinal"
-  }},
-  "y": {{
-    "aggregate": "count"
+    "field": "Age",
+    "bin": true,  // 或定义bin参数："maxbins": 10
+    "type": "quantitative"
   }}
 }}
 ```
 
-2. 【聚合操作】也应该放在encoding里对应的编码通道中：
+2. 【自定义不均匀分箱】(如pandas.cut或自定义bins)应该使用calculate转换:
+```
+"transform": [
+  {{
+    "calculate": "datum.Age >= 18 && datum.Age < 30 ? '18-30' : datum.Age >= 30 && datum.Age < 45 ? '31-45' : datum.Age >= 45 && datum.Age < 60 ? '46-60' : '60+'",
+    "as": "Age_Group"
+  }}
+],
+"encoding": {{
+  "x": {{
+    "field": "Age_Group",
+    "type": "nominal"
+  }}
+}}
+```
+
+3. 【分箱+自定义标签】对于需要自定义bin边界和标签的情况:
+```
+"transform": [
+  {{
+    "bin": {{
+      "field": "Age",
+      "as": "age_bins",
+      "extent": [18, 70],  // 数据范围
+      "steps": [18, 30, 45, 60, 70]  // 自定义分箱边界
+    }}
+  }},
+  {{
+    "calculate": "datum.age_bins_end === 30 ? '18-30' : datum.age_bins_end === 45 ? '31-45' : datum.age_bins_end === 60 ? '46-60' : '60+'", 
+    "as": "Age_Group"
+  }}
+],
+"encoding": {{
+  "x": {{
+    "field": "Age_Group",
+    "type": "nominal"
+  }}
+}}
+```
+
+【聚合操作】应该放在encoding里对应的编码通道中：
 ```
 "encoding": {{
   "y": {{
@@ -71,21 +117,12 @@ def get_python_to_vegalite_prompt(python_code: str) -> str:
 }}
 ```
 
-3. 【分组和染色】使用color或column等通道：
+【分组和染色】使用color或column等通道：
 ```
 "encoding": {{
   "x": {{"field": "category"}},
   "y": {{"field": "value"}},
   "color": {{"field": "group"}}
-}}
-```
-
-4. 【偏移和分面】使用xOffset或yOffset：
-```
-"encoding": {{
-  "x": {{"field": "category"}},
-  "y": {{"field": "value"}},
-  "xOffset": {{"field": "group"}}
 }}
 ```
 
@@ -101,11 +138,6 @@ def get_python_to_vegalite_prompt(python_code: str) -> str:
     // 编码映射，包含数据转换操作
   }}
 }}
-
-Python可视化代码:
-```
-{python_code}
-```
 
 最终只返回一个有效的JSON对象，不要使用Markdown格式，不要添加任何解释文本。
 """

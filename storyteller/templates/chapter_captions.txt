@@ -30,10 +30,10 @@ Please return in JSON format:
         {{
           "chart_idx": 0,
           "caption": "key point1: First insight about this chart.\nkey point2: Second important observation.\nkey point3: Third notable pattern or conclusion."
-        }},
+        }}
         // Captions for other charts...
       ]
-    }},
+    }}
     // Schemes 2 and 3 follow similar pattern...
   ]
 }}

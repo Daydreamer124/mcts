@@ -1,7 +1,7 @@
 query: "Analyze the difference between the customers"
 dataset_path: "/Users/zhangzhiyang/mcts/storyteller/dataset/shopping.csv"
 save_root_dir: "storyteller/output" 
-max_iterations: 2
+max_iterations: 1
 max_depth: 35
 exploration_constant: 1.4
 data_context: "/Users/zhangzhiyang/mcts/storyteller/dataset/data_context.json"
@@ -12,7 +12,7 @@ llm_kwargs:
   api_key: "sk-N3NMJtA44V4Qu5NhB18cE97331734788Bc18A77b8fC1DaD6"
 
   #model: "gpt-4-32k"
-  #api_key: "51cc660dc31b4843893130c3e2bf220ca0954ba55c9e46f088d5cd22e957d0fb"
+  #api_key: "d74fffb357284e028df324ae812543b31e30e7b89bad4e408bcd61832c28d161"
   #base_url: "https://gpt-api.hkust-gz.edu.cn/v1"
 # 历史记录配置
 history:

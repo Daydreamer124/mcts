@@ -703,25 +703,90 @@ class DataStorytellingMCTSSolver:
             if hasattr(chapter, 'transition') and chapter.transition:
                 markdown.append(f"{chapter.transition}\n\n")
             
-            # 添加图表和说明
-            for chart in getattr(chapter, 'charts', []):
-                # 先添加图表说明
-                if hasattr(chart, 'caption') and chart.caption:
-                    markdown.append(f"\n> {chart.caption}\n")
+            # 检查是否有包含chart_groups属性的图表
+            charts_by_group = {}
+            has_groups = False
+            
+            # 尝试查找是否有图表分组信息
+            if hasattr(chapter, 'chart_groups') and chapter.chart_groups:
+                # 存在chart_groups，表示使用了新的评估和分组方法
+                has_groups = True
                 
-                # 处理图表URL
-                if hasattr(chart, 'url') and chart.url:
-                    try:
-                        # 获取图片文件名
-                        img_filename = os.path.basename(chart.url)
-                        print(f"处理图片: {img_filename}")
-                        print(f"原始URL: {chart.url}")
-                        
-                        # 使用相对路径，确保路径正确
-                        markdown.append(f"\n![{chapter_title}](charts/{img_filename})\n")
-                    except Exception as e:
-                        print(f"❌ 处理图片路径时出错: {str(e)}")
-                        continue
+                # 按组整理图表
+                for group in chapter.chart_groups:
+                    group_id = group.get('group_id', 0)
+                    chart_indices = group.get('chart_indices', [])
+                    group_theme = group.get('theme', '图表组')
+                    group_captions = []
+                    group_charts = []
+                    
+                    # 收集该组的所有图表
+                    for idx in chart_indices:
+                        if 0 <= idx < len(chapter.charts):
+                            chart = chapter.charts[idx]
+                            if hasattr(chart, 'url') and chart.url:
+                                group_charts.append(chart)
+                                if hasattr(chart, 'caption') and chart.caption:
+                                    group_captions.append(chart.caption)
+                    
+                    # 如果组内有图表，则添加到字典
+                    if group_charts:
+                        # 创建组共享的caption（使用第一个caption或组合所有caption）
+                        group_caption = group_captions[0] if group_captions else f"图表组: {group_theme}"
+                        charts_by_group[group_id] = {
+                            'charts': group_charts,
+                            'caption': group_caption,
+                            'theme': group_theme
+                        }
+            
+            # 如果有分组信息，按组显示图表
+            if has_groups and charts_by_group:
+                for group_id, group_info in charts_by_group.items():
+                    group_charts = group_info['charts']
+                    group_caption = group_info['caption']
+                    group_theme = group_info['theme']
+                    
+                    # 添加组标题（可选）
+                    markdown.append(f"\n### {group_theme}\n")
+                    
+                    # 先添加组caption
+                    markdown.append(f"\n> {group_caption}\n")
+                    
+                    # 不要使用div标签，改为使用HTML注释作为标记，供parse_markdown识别
+                    markdown.append("\n<!-- chart-group-start -->\n")
+                    
+                    # 添加组内所有图表，不使用{.chart-in-group}标记
+                    for chart in group_charts:
+                        try:
+                            # 获取图片文件名
+                            img_filename = os.path.basename(chart.url)
+                            
+                            # 使用相对路径，不添加额外标记
+                            markdown.append(f"![{group_theme}](charts/{img_filename})\n")
+                        except Exception as e:
+                            print(f"❌ 处理分组图片路径时出错: {str(e)}")
+                            continue
+                    
+                    # 使用HTML注释作为结束标记
+                    markdown.append("\n<!-- chart-group-end -->\n")
+            else:
+                # 没有分组信息，使用传统方式逐个添加图表和caption
+                for chart in getattr(chapter, 'charts', []):
+                    # 先添加图表说明
+                    if hasattr(chart, 'caption') and chart.caption:
+                        markdown.append(f"\n> {chart.caption}\n")
+                    
+                    # 处理图表URL
+                    if hasattr(chart, 'url') and chart.url:
+                        try:
+                            # 获取图片文件名
+                            img_filename = os.path.basename(chart.url)
+                            
+                            # 使用相对路径，确保路径正确
+                            markdown.append(f"\n![{chapter_title}](charts/{img_filename})\n")
+                        except Exception as e:
+                            print(f"❌ 处理图片路径时出错: {str(e)}")
+                            continue
             
             # 添加章节总结
             if hasattr(chapter, 'summary') and chapter.summary:

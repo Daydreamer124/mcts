@@ -6,149 +6,181 @@ from pathlib import Path
 import random
 import urllib.parse
 import json
+import re
 
 def parse_markdown(md_path):
+    """
+    解析Markdown文件，提取章节和图表信息
+    直接使用更高效的直接解析方法
+    """
+    print(f"\n开始解析Markdown文件: {md_path}")
+    return parse_markdown_direct(md_path)
+
+def parse_markdown_direct(md_path):
+    """使用直接解析Markdown的方式提取数据结构"""
+    print(f"\n使用直接解析方式提取Markdown内容: {md_path}")
+    
     with open(md_path, 'r', encoding='utf-8') as f:
         md_content = f.read()
-    html = markdown.markdown(md_content, extensions=['extra'])
-    soup = BeautifulSoup(html, 'html.parser')
 
-    # Get the directory of the markdown file for relative paths
+    # 获取Markdown文件所在目录
     md_dir = os.path.dirname(os.path.abspath(md_path))
 
+    # 初始化数据结构
     sections = []
-    current_section = {}
-    current_charts = []
+    current_section = None
     current_caption = ""
-    current_key_insights = []  # 用于存储关键指标
+    in_chart_group = False
+    current_group_charts = []
+    current_group_caption = ""
     
-    for tag in soup.find_all():
-        if tag.name == 'h2':
-            # 如果已经有当前章节，先保存它
+    # 按行处理Markdown内容
+    lines = md_content.split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        
+        # 识别章节标题 (## 开头)
+        if line.startswith('## '):
+            # 保存之前的章节（如果有）
             if current_section:
-                if current_key_insights:
-                    current_section["key_insights"] = current_key_insights
                 sections.append(current_section)
-            # 开始新的章节
-            title_text = tag.get_text(strip=True)
             
+            # 提取章节标题
+            title = line[3:].strip()
             # 处理字典格式的标题
-            if title_text.startswith("{'title': '") and title_text.endswith("'}"):
-                title_text = title_text[len("{'title': '"):-2]
+            if title.startswith("{'title': '") and title.endswith("'}"):
+                title = title[len("{'title': '"):-2]
             
+            # 创建新章节
             current_section = {
-                "title": title_text,
+                "title": title,
                 "charts": [],
                 "summary": "",
                 "key_insights": []
             }
-            current_charts = []
             current_caption = ""
-            current_key_insights = []  # 重置关键指标列表
-        elif tag.name == 'blockquote':
-            current_caption = tag.get_text(strip=True)
-        elif tag.name == 'img':
-            img_path = tag.get('src', '')
-            # Convert relative path to absolute path based on markdown file location
-            if img_path and not os.path.isabs(img_path):
-                img_path = os.path.join(md_dir, img_path)
+            in_chart_group = False
+            current_group_charts = []
+            current_group_caption = ""
             
-            # 尝试查找对应的JSON配置文件
-            config_path = None
-            vegalite_config_path = None
+            print(f"发现章节: {title}")
+        
+        # 识别引用块 (> 开头)，处理为caption
+        elif line.startswith('>'):
+            caption_text = line[1:].strip()
             
-            if img_path.lower().endswith('.png'):
-                # 构建可能的JSON配置文件路径
-                img_dir = os.path.dirname(img_path)
-                img_filename = os.path.basename(img_path)
-                img_basename = os.path.splitext(img_filename)[0]
+            # 如果已经在处理图表组，或者下一个非空行是chart-group-start，则将caption设置为图表组的caption
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1  # 跳过空行
                 
-                # 设置潜在的配置文件所在目录
-                # 首先尝试在同级的chart_configs目录查找
-                config_dir = os.path.join(os.path.dirname(img_dir), "chart_configs")
-                
-                # 查找Vega-Lite配置文件
-                vegalite_config_dir = os.path.join(os.path.dirname(img_dir), "vegalite_configs")
-                
-                # 尝试多种可能的配置文件名
-                possible_config_paths = [
-                    os.path.join(config_dir, f"{img_basename}.json"),
-                    os.path.join(config_dir, f"{img_basename}_edited.json"),
-                    # 尝试在同目录查找
-                    os.path.join(img_dir, f"{img_basename}.json"),
-                    os.path.join(img_dir, f"{img_basename}_config.json")
-                ]
-                
-                # 尝试多种可能的Vega-Lite配置文件名
-                possible_vegalite_paths = [
-                    os.path.join(vegalite_config_dir, f"{img_basename}.json"),
-                    os.path.join(vegalite_config_dir, f"{escape_filename(img_basename)}.json"),
-                    os.path.join(vegalite_config_dir, f"{escape_filename(current_caption)}.json")
-                ]
-                
-                for path in possible_config_paths:
-                    if os.path.exists(path):
-                        config_path = path
-                        print(f"找到图表配置文件: {config_path}")
-                        break
-                
-                for path in possible_vegalite_paths:
-                    if os.path.exists(path):
-                        vegalite_config_path = path
-                        print(f"找到Vega-Lite配置文件: {vegalite_config_path}")
-                        break
+            is_next_group_start = j < len(lines) and "<!-- chart-group-start -->" in lines[j].strip()
             
-            chart_info = {
-                "img": img_path,
-                "caption": current_caption
-            }
-            
-            # 如果找到了配置文件，添加到图表信息中
-            if config_path:
-                chart_info["config"] = config_path
-            
-            # 如果找到了Vega-Lite配置文件，添加到图表信息中
-            if vegalite_config_path:
-                chart_info["vegalite_config"] = vegalite_config_path
+            if in_chart_group or is_next_group_start:
+                current_group_caption = caption_text
+                print(f"设置图表组caption: {caption_text[:30]}...")
+            else:
+                current_caption = caption_text
+                print(f"设置单图表caption: {caption_text[:30]}...")
+        
+        # 识别图表组开始标记
+        elif '<!-- chart-group-start -->' in line:
+            in_chart_group = True
+            current_group_charts = []
+            print("检测到图表组开始标记")
                 
-            current_section["charts"].append(chart_info)
-        elif tag.name == 'h3' and tag.get_text(strip=True) == "Chapter Summary":
-            # 获取所有后续的p标签，直到遇到下一个h2或h3
-            summary_parts = []
-            next_tag = tag.find_next()
-            while next_tag and next_tag.name not in ['h2', 'h3']:
-                if next_tag.name == 'p':
-                    summary_parts.append(next_tag.get_text(strip=True))
-                next_tag = next_tag.find_next()
-            if summary_parts:
-                current_section["summary"] = " ".join(summary_parts)
-        elif tag.name == 'h3' and tag.get_text(strip=True) == "Key Insights":
-            # 获取所有后续的li标签，直到遇到下一个h2或h3
-            next_tag = tag.find_next()
-            while next_tag and next_tag.name not in ['h2', 'h3']:
-                if next_tag.name == 'li' or next_tag.name == 'p':
-                    insight_text = next_tag.get_text(strip=True)
-                    if insight_text:  # 确保不是空字符串
-                        current_key_insights.append(insight_text)
-                next_tag = next_tag.find_next()
-        # 检查是否有包含"关键指标"或"Key Metrics"的段落
-        elif tag.name == 'p':
-            text = tag.get_text(strip=True)
-            if "关键指标:" in text or "关键指标：" in text or "Key Metrics:" in text:
-                # 提取冒号后面的内容作为关键指标
-                sep = ":" if ":" in text else "："
-                insight_text = text.split(sep, 1)[1].strip()
-                if insight_text:
-                    current_key_insights.append(insight_text)
-
-    # 不要忘记添加最后一个章节
+        # 识别图表组结束标记
+        elif '<!-- chart-group-end -->' in line:
+            if in_chart_group and current_group_charts and current_section:
+                # 创建图表组对象
+                chart_group = {
+                    "is_chart_group": True,
+                    "charts": current_group_charts,
+                    "group_caption": current_group_caption
+                }
+                
+                # 添加到章节
+                current_section["charts"].append(chart_group)
+                print(f"添加图表组，包含 {len(current_group_charts)} 个图表, caption: '{current_group_caption[:50]}...'")
+            
+            in_chart_group = False
+            current_group_charts = []
+            current_group_caption = ""
+        
+        # 识别图片 (![alt](src) 格式)
+        elif line.startswith('![') and '](' in line and line.endswith(')'):
+            # 提取图片信息
+            alt_start = line.find('![') + 2
+            alt_end = line.find('](')
+            src_start = alt_end + 2
+            src_end = line.rfind(')')
+            
+            if alt_start < alt_end and src_start < src_end:
+                alt_text = line[alt_start:alt_end]
+                src = line[src_start:src_end]
+                
+                # 构建完整路径
+                if not os.path.isabs(src):
+                    img_path = os.path.join(md_dir, src)
+                else:
+                    img_path = src
+                
+                # 创建图表信息
+                chart_info = {
+                    "img": img_path,
+                    "caption": current_caption if not in_chart_group else "",
+                    "alt_text": alt_text
+                }
+                
+                # 添加到适当的位置
+                if in_chart_group:
+                    chart_info["in_group"] = True
+                    current_group_charts.append(chart_info)
+                    print(f"添加图片到组: {src}")
+                elif current_section:
+                    current_section["charts"].append(chart_info)
+                    print(f"添加单个图片: {src}")
+        
+        # 识别Chapter Summary部分
+        elif line == "### Chapter Summary":
+            summary_lines = []
+            j = i + 1
+            while j < len(lines) and lines[j].strip() and not lines[j].startswith('#'):
+                summary_lines.append(lines[j].strip())
+                j += 1
+            
+            if summary_lines and current_section:
+                current_section["summary"] = " ".join(summary_lines)
+                print(f"设置章节摘要: {current_section['summary'][:50]}...")
+                # 跳过已处理的行
+                i = j - 1
+        
+        i += 1
+    
+    # 添加最后一个章节
     if current_section:
-        if current_key_insights:
-            current_section["key_insights"] = current_key_insights
         sections.append(current_section)
+    
+    # 打印统计信息
+    print(f"\n解析完成: 找到 {len(sections)} 个章节")
+    for i, section in enumerate(sections, 1):
+        charts_count = len(section.get("charts", []))
+        print(f"章节 {i}: '{section.get('title', '无标题')}' - 包含 {charts_count} 个图表/图表组")
+        
+        for j, chart in enumerate(section.get("charts", []), 1):
+            if isinstance(chart, dict) and chart.get("is_chart_group", False):
+                group_charts = chart.get("charts", [])
+                group_caption = chart.get("group_caption", "")
+                print(f"  - 图表组 {j}: 包含 {len(group_charts)} 个图表, caption: '{group_caption[:30]}...'")
+            else:
+                img_path = chart.get("img", "")
+                caption = chart.get("caption", "")
+                print(f"  - 图表 {j}: {os.path.basename(img_path)}, caption: '{caption[:30]}...'")
+    
     return sections
 
-# 辅助函数，将文件名中的特殊字符转换为下划线，避免在查找文件时出错
+# 辅助函数：将文件名中的特殊字符转换为下划线，避免在查找文件时出错
 def escape_filename(name):
     if not name:
         return "unnamed"
@@ -156,22 +188,39 @@ def escape_filename(name):
     import re
     return re.sub(r'[^\w\-\.]', '_', name)
 
-# 移动辅助函数到前面，这样其他函数可以引用它
 # 辅助函数：将绝对路径转换为相对路径
 def convert_to_relative_path(path):
-    # 检测路径是否为绝对路径
-    if os.path.isabs(path):
-        # 从绝对路径中提取关键部分，通常是"storyteller"目录后的部分
-        parts = path.split(os.sep)
+    """
+    将绝对路径转换为相对路径，改进版：
+    1. 如果不是绝对路径，直接返回
+    2. 尝试从常见目录名如'storyteller'、'mcts'等提取相对路径
+    3. 如果无法提取，使用文件名作为相对路径
+    """
+    if not path:
+        return ""
+        
+    # 如果不是绝对路径，直接返回
+    if not os.path.isabs(path):
+        return path
+        
+    # 尝试查找常见目录部分，构建相对路径
+    common_dirs = ['storyteller', 'mcts', 'data', 'reports', 'images']
+    parts = path.split(os.sep)
+    
+    for common_dir in common_dirs:
         try:
-            storyteller_index = parts.index("storyteller")
-            # 从storyteller开始构建相对路径
-            relative_path = "/".join(parts[storyteller_index:])
+            index = parts.index(common_dir)
+            # 从该目录开始构建相对路径
+            relative_path = "/".join(parts[index:])
+            print(f"转换路径: {path} -> {relative_path}")
             return relative_path
         except ValueError:
-            # 如果找不到storyteller目录，返回原路径
-            return path
-    return path
+            continue
+    
+    # 如果找不到常见目录，至少返回文件名作为相对路径
+    filename = os.path.basename(path)
+    print(f"未找到常见目录，使用文件名: {path} -> {filename}")
+    return filename
 
 # 添加一个通用函数来处理Vega-Lite配置
 def prepare_vegalite_config(sections):
@@ -188,40 +237,55 @@ def prepare_vegalite_config(sections):
     chart_id_counter = 0
     
     for section in sections:
-        for chart in section.get("charts", []):
-            vegalite_config_path = chart.get("vegalite_config", "")
-            img_path = chart.get("img", "")
-            
-            if vegalite_config_path:
-                # 如果有配置文件，使用Vega-Lite渲染
-                chart_id = f"vegalite_chart_{chart_id_counter}"
-                chart_id_counter += 1
-                
-                # 读取JSON配置文件内容
-                try:
-                    with open(vegalite_config_path, 'r', encoding='utf-8') as f:
-                        vegalite_spec = json.load(f)
-                    
-                    # 获取相对路径并保存图片路径
-                    relative_img_path = convert_to_relative_path(img_path)
-                    
-                    # 保存配置信息
-                    chart_configs.append({
-                        "chartId": chart_id,
-                        "vegaliteSpec": vegalite_spec,
-                        "imgPath": relative_img_path
-                    })
-                    
-                    # 在图表对象上添加chart_id属性，以便模板函数使用
-                    chart["chart_id"] = chart_id
-                    # 标记为Vega-Lite图表
-                    chart["is_vegalite"] = True
-                    
-                except Exception as e:
-                    print(f"读取Vega-Lite配置文件失败: {vegalite_config_path}, 错误: {e}")
-                    continue
+        for chart_item in section.get("charts", []):
+            # 检查是否是图表组
+            if isinstance(chart_item, dict) and chart_item.get("is_chart_group", False):
+                # 处理图表组内的所有图表
+                for group_chart in chart_item.get("charts", []):
+                    process_chart_config(group_chart, chart_configs, chart_id_counter)
+                    if "chart_id" in group_chart:
+                        chart_id_counter += 1
+            else:
+                # 处理单个图表
+                process_chart_config(chart_item, chart_configs, chart_id_counter)
+                if "chart_id" in chart_item:
+                    chart_id_counter += 1
     
     return chart_configs, chart_id_counter
+
+def process_chart_config(chart, chart_configs, chart_id_counter):
+    """处理单个图表的配置"""
+    vegalite_config_path = chart.get("vegalite_config", "")
+    img_path = chart.get("img", "")
+    
+    if vegalite_config_path:
+        # 如果有配置文件，使用Vega-Lite渲染
+        chart_id = f"vegalite_chart_{chart_id_counter}"
+        
+        # 读取JSON配置文件内容
+        try:
+            with open(vegalite_config_path, 'r', encoding='utf-8') as f:
+                vegalite_spec = json.load(f)
+            
+            # 获取相对路径并保存图片路径
+            relative_img_path = convert_to_relative_path(img_path)
+            
+            # 保存配置信息
+            chart_configs.append({
+                "chartId": chart_id,
+                "vegaliteSpec": vegalite_spec,
+                "imgPath": relative_img_path
+            })
+            
+            # 在图表对象上添加chart_id属性，以便模板函数使用
+            chart["chart_id"] = chart_id
+            # 标记为Vega-Lite图表
+            chart["is_vegalite"] = True
+            
+        except Exception as e:
+            print(f"读取Vega-Lite配置文件失败: {vegalite_config_path}")
+            print(f"错误详情: {str(e)}")
+            print(f"确保文件存在且是有效的JSON格式")
 
 # 生成Vega-Lite渲染脚本
 def generate_vegalite_script(chart_configs):
@@ -323,17 +387,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 def fill_template(sections, template_type="dashboard"):
     from pathlib import Path
-
-    def highlight_keywords(text):
-        if not text:
-            return ""
-        # 这里可以添加关键词高亮逻辑
-        return text
-
-    from html import escape
     
     # 使用特殊的布局模板
-    if template_type == "sidebar":
+    """ if template_type == "sidebar":
         return generate_sidebar_template(sections)
     elif template_type == "grid":
         return generate_grid_template(sections)
@@ -344,1145 +400,53 @@ def fill_template(sections, template_type="dashboard"):
     else:
         # 默认使用dashboard模板
         return generate_dashboard_template(sections)
+ """
+    # 默认使用dashboard模板
+    if template_type == "sidebar":
+        return generate_dashboard_template(sections)
 
-
-def generate_sidebar_template(sections):
+def highlight_keywords(text, keywords=None):
+    """
+    对文本中的关键词进行高亮处理
+    
+    参数:
+    - text: 要处理的文本
+    - keywords: 关键词列表，如果为None则使用默认关键词
+    
+    返回:
+    - 处理后的文本，带有HTML高亮标记
+    """
+    if not text:
+        return ""
+    
+    # 如果没有提供关键词，使用默认关键词
+    if keywords is None:
+        keywords = [
+            "增长", "下降", "上升", "趋势", "显著", "明显", 
+            "突出", "重要", "关键", "异常", "高于", "低于",
+            "最高", "最低", "增加", "减少", "变化", "稳定",
+            "波动", "集中", "分散", "极值", "outlier", "异常值"
+        ]
+    
     from html import escape
     
-    # 处理图表配置，使用Vega-Lite
-    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
-    
-    # 生成导航链接
-    nav_links = ""
-    main_content = ""
-    
-    for i, section in enumerate(sections, 1):
-        section_id = f"sec{i}"
-        title = section["title"]
-        
-        # 添加导航链接
-        nav_links += f'    <a href="#{section_id}" class="nav-link"><span class="nav-number">{i}</span><span class="nav-text">{escape(title)}</span></a>\n'
-        
-        # 添加内容部分
-        main_content += f'''    <section id="{section_id}" class="content-section">
-      <h2><span class="section-number">{i}</span>{escape(title)}</h2>\n'''
-      
-        # 添加关键指标（如果有的话）
-        key_insights = section.get("key_insights", [])
-        if key_insights:
-            main_content += f'      <div class="insights-container">\n'
-            for insight in key_insights:
-                main_content += f'        <div class="key-insight"><div class="key-insight-content">{escape(insight)}</div></div>\n'
-            main_content += f'      </div>\n'
-      
-        # 添加图表
-        for chart in section["charts"]:
-            img = chart.get("img", "")
-            caption = chart.get("caption", "")
-            vegalite_config = chart.get("vegalite_config", "")
-            is_vegalite = chart.get("is_vegalite", False)
-            
-            if is_vegalite:
-                chart_id = chart.get("chart_id", "")
-                
-                # 添加data-fallback属性以供回退使用
-                relative_img_path = convert_to_relative_path(img)
-                main_content += f'''      <div class="chart-card">
-        <div class="chart-wrapper">
-          <div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div>
-        </div>
-        <div class="caption">{escape(caption)}</div>
-      </div>\n'''
-            else:
-                # 获取相对路径
-                relative_img_path = convert_to_relative_path(img)
-                main_content += f'''      <div class="chart-card">
-        <div class="chart-wrapper">
-          <img src="{relative_img_path}" width="100%">
-        </div>
-        <div class="caption">{escape(caption)}</div>
-      </div>\n'''
-            
-        # 添加章节小结
-        summary = section.get("summary", "")
-        if summary:
-            main_content += f'      <div class="summary"><div class="summary-icon">📊</div><div class="summary-content"><p><strong>Chapter Summary：</strong> {escape(summary)}</p></div></div>\n'
-            
-        main_content += '    </section>\n\n'
-    
-    # 生成Vega-Lite脚本
-    chart_script = generate_vegalite_script(chart_configs)
-    
-    # 组装HTML
-    html = f'''<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>数据分析报告</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root {{
-      --primary-color: #4f46e5;
-      --primary-light: #818cf8;
-      --primary-dark: #3730a3;
-      --bg-color: #ffffff;
-      --sidebar-bg: #f9fafb;
-      --text-color: #1f2937;
-      --text-light: #6b7280;
-      --border-color: #e5e7eb;
-      --hover-color: #f3f4f6;
-      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    }}
-    
-    * {{
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }}
-    
-    body {{
-      font-family: 'Inter', sans-serif;
-      background-color: var(--bg-color);
-      color: var(--text-color);
-      margin: 0;
-      display: flex;
-      line-height: 1.5;
-    }}
-    
-    nav {{
-      width: 280px;
-      background: var(--sidebar-bg);
-      height: 100vh;
-      padding: 2rem 0;
-      position: sticky;
-      top: 0;
-      overflow-y: auto;
-      border-right: 1px solid var(--border-color);
-      box-shadow: var(--shadow-sm);
-      transition: all 0.3s ease;
-      z-index: 10;
-    }}
-    
-    .nav-header {{
-      padding: 0 1.5rem 1.5rem;
-      border-bottom: 1px solid var(--border-color);
-      margin-bottom: 1.5rem;
-    }}
-    
-    .nav-title {{
-      font-size: 1.2rem;
-      font-weight: 600;
-      color: var(--primary-color);
-      margin-bottom: 0.5rem;
-    }}
-    
-    .nav-subtitle {{
-      font-size: 0.875rem;
-      color: var(--text-light);
-    }}
-    
-    nav a {{
-      display: flex;
-      align-items: center;
-      padding: 0.75rem 1.5rem;
-      text-decoration: none;
-      color: var(--text-color);
-      font-weight: 500;
-      border-left: 3px solid transparent;
-      transition: all 0.2s;
-    }}
-    
-    nav a:hover {{
-      background-color: var(--hover-color);
-    }}
-    
-    nav a.active {{
-      color: var(--primary-color);
-      background-color: rgba(79, 70, 229, 0.1);
-      border-left-color: var(--primary-color);
-    }}
-    
-    .nav-number {{
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-      background-color: #e5e7eb;
-      color: var(--text-color);
-      border-radius: 50%;
-      font-size: 0.75rem;
-      margin-right: 0.75rem;
-      flex-shrink: 0;
-      transition: all 0.2s;
-    }}
-    
-    a:hover .nav-number {{
-      background-color: var(--primary-light);
-      color: white;
-    }}
-    
-    a.active .nav-number {{
-      background-color: var(--primary-color);
-      color: white;
-    }}
-    
-    .nav-text {{
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }}
-    
-    main {{
-      flex: 1;
-      padding: 2rem 3rem 4rem;
-      max-width: 1200px;
-      margin: 0 auto;
-    }}
-    
-    .content-header {{
-      margin-bottom: 3rem;
-      text-align: center;
-    }}
-    
-    .main-title {{
-      font-size: 2.25rem;
-      font-weight: 700;
-      color: var(--primary-dark);
-      margin-bottom: 0.5rem;
-      letter-spacing: -0.025em;
-    }}
-    
-    .main-subtitle {{
-      font-size: 1.1rem;
-      color: var(--text-light);
-    }}
-    
-    .content-section {{
-      margin-bottom: 4rem;
-      padding-bottom: 2.5rem;
-      border-bottom: 1px solid var(--border-color);
-    }}
-    
-    .content-section:last-child {{
-      border-bottom: none;
-    }}
-    
-    h2 {{
-      display: flex;
-      align-items: center;
-      font-size: 1.5rem;
-      font-weight: 600;
-      color: var(--primary-dark);
-      margin-bottom: 1.5rem;
-      padding-bottom: 0.75rem;
-      border-bottom: 2px solid var(--primary-light);
-    }}
-    
-    .section-number {{
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      background-color: var(--primary-color);
-      color: white;
-      border-radius: 50%;
-      font-size: 0.875rem;
-      margin-right: 0.75rem;
-    }}
-    
-    .chart-card {{
-      margin: 2rem 0;
-      border-radius: 0.5rem;
-      overflow: hidden;
-      box-shadow: var(--shadow-md);
-      transition: all 0.3s ease;
-      display: flex;
-      flex-direction: column;
-    }}
-    
-    .chart-card:hover {{
-      transform: translateY(-4px);
-      box-shadow: var(--shadow-lg);
-    }}
-    
-    .chart-wrapper {{
-      position: relative;
-      height: 400px;
-      width: 100%;
-      overflow: hidden;
-    }}
-    
-    .chart-wrapper img {{
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }}
-    
-    .chart-container {{
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-    }}
-    
-    .caption {{
-      background-color: #f9fafb;
-      padding: 1rem;
-      font-size: 0.875rem;
-      color: var(--text-light);
-      border-top: 1px solid var(--border-color);
-    }}
-    
-    .summary {{
-      display: flex;
-      margin-top: 2rem;
-      padding: 1.25rem;
-      background-color: #f0f9ff;
-      border-radius: 0.5rem;
-      box-shadow: var(--shadow-sm);
-    }}
-    
-    .summary-icon {{
-      font-size: 1.5rem;
-      margin-right: 1rem;
-      color: var(--primary-color);
-    }}
-    
-    .summary-content {{
-      flex: 1;
-    }}
-    
-    .summary p {{
-      margin: 0;
-      font-size: 0.95rem;
-      line-height: 1.6;
-    }}
-    
-    .summary strong {{
-      color: var(--primary-dark);
-    }}
-    
-    .key-insight {{
-      background-color: rgba(79, 70, 229, 0.1);
-      border-radius: 8px;
-      padding: 1rem 1.2rem;
-      margin: 1.5rem 0;
-      position: relative;
-      border-left: 4px solid var(--primary-color);
-    }}
-    
-    .key-insight:before {{
-      content: "💡";
-      font-size: 1.2rem;
-      position: absolute;
-      left: -12px;
-      top: -12px;
-      background: white;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: var(--shadow-sm);
-    }}
-    
-    .key-insight-content {{
-      font-weight: 500;
-      color: var(--primary-dark);
-    }}
-    
-    .insights-container {{
-      margin-bottom: 2rem;
-    }}
-    
-    /* Vega-Lite特定样式 */
-    .vega-embed {{
-      width: 100%;
-      height: 100%;
-    }}
-    .vega-embed .vega-actions {{
-      top: 0;
-      right: 0;
-      padding: 6px;
-    }}
-    
-    /* 响应式设计 */
-    @media (max-width: 768px) {{
-      body {{
-        flex-direction: column;
-      }}
-      
-      nav {{
-        width: 100%;
-        height: auto;
-        position: relative;
-        padding: 1rem 0;
-      }}
-      
-      main {{
-        padding: 1.5rem;
-      }}
-      
-      .main-title {{
-        font-size: 1.75rem;
-      }}
-    }}
-  </style>
-</head>
-<body>
-  <nav>
-    <div class="nav-header">
-      <div class="nav-title">目录</div>
-      <div class="nav-subtitle">数据分析章节</div>
-    </div>
-{nav_links}  </nav>
-  <main>
-    <div class="content-header">
-      <h1 class="main-title">数据分析报告</h1>
-      <p class="main-subtitle">详细的数据分析与发现</p>
-    </div>
-{main_content}  </main>
-  
-  <script>
-    // 滚动时激活当前导航项
-    document.addEventListener('DOMContentLoaded', function() {{
-      const sections = document.querySelectorAll('.content-section');
-      const navLinks = document.querySelectorAll('.nav-link');
-      
-      // 初始状态下激活第一个导航项
-      if (navLinks.length > 0) {{
-        navLinks[0].classList.add('active');
-      }}
-      
-      // 滚动时更新激活状态
-      window.addEventListener('scroll', function() {{
-        let current = '';
-        
-        sections.forEach(function(section) {{
-          const sectionTop = section.offsetTop;
-          const sectionHeight = section.clientHeight;
-          if(scrollY >= (sectionTop - 200)) {{
-            current = section.getAttribute('id');
-          }}
-        }});
-        
-        navLinks.forEach(function(link) {{
-          link.classList.remove('active');
-          if(link.getAttribute('href').substring(1) === current) {{
-            link.classList.add('active');
-          }}
-        }});
-      }});
-    }});
-  </script>
-{chart_script}</body>
-</html>'''
-    
-    return html
-
-
-def generate_grid_template(sections):
-    from html import escape
-    import urllib.parse
-    import os.path
-    
-    # 处理图表配置
-    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
-    
-    # 生成图表卡片内容
-    cards_html = ""
-    
-    for i, section in enumerate(sections, 1):
-        title = section["title"]
-        cards_html += f'<div class="section-title"><h2>{i}. {escape(title)}</h2></div>\n'
-        
-        # 添加关键指标（如果有的话）
-        key_insights = section.get("key_insights", [])
-        if key_insights:
-            cards_html += f'<div class="insights-grid">\n'
-            for insight in key_insights:
-                cards_html += f'  <div class="insight-card">\n'
-                cards_html += f'    <div class="insight-icon">💡</div>\n'
-                cards_html += f'    <div class="insight-content">{escape(insight)}</div>\n'
-                cards_html += f'  </div>\n'
-            cards_html += f'</div>\n'
-        
-        cards_html += '<div class="card-grid">\n'
-        
-        for chart in section["charts"]:
-            img = chart.get("img", "")
-            caption = chart.get("caption", "")
-            config = chart.get("config", "")
-            is_vegalite = chart.get("is_vegalite", False)
-            
-            cards_html += f'  <div class="card">\n'
-            
-            # 获取相对路径
-            relative_img_path = convert_to_relative_path(img)
-            
-            if is_vegalite:
-                # 如果是Vega-Lite图表，使用div容器
-                chart_id = chart.get("chart_id", "")
-                cards_html += f'    <div class="chart-wrapper"><div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div></div>\n'
-            elif config:
-                # 如果有配置文件但不是Vega-Lite，使用Canvas渲染
-                chart_id = chart.get("chart_id", "")
-                cards_html += f'    <div class="chart-wrapper">\n'
-                cards_html += f'      <canvas id="{chart_id}"></canvas>\n'
-                cards_html += f'    </div>\n'
-            else:
-                # 没有配置文件，使用静态图片
-                cards_html += f'    <div class="chart-wrapper"><img src="{relative_img_path}" alt="{escape(caption)}"></div>\n'
-            
-            cards_html += f'    <div class="card-caption">{escape(caption)}</div>\n'
-            cards_html += '  </div>\n'
-            
-        cards_html += '</div>\n'
-        
-        # 添加章节小结
-        summary = section.get("summary", "")
-        if summary:
-            cards_html += f'<div class="summary"><p><strong>Chapter Summary：</strong> {escape(summary)}</p></div>\n'
-    
-    # 生成Chart.js脚本
-    chart_script = generate_vegalite_script(chart_configs)
-    
-    # 组装HTML
-    html = f'''<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>数据分析报告</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
-  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
-  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
-  <style>
-    body {{ font-family: 'Inter', sans-serif; background-color: #f8f9fa; color: #333; max-width: 1200px; margin: 0 auto; padding: 2rem; }}
-    h1 {{ text-align: center; color: #303f9f; margin-bottom: 2rem; font-size: 2.2rem; }}
-    .section-title {{ width: 100%; margin: 2rem 0 1rem 0; }}
-    h2 {{ color: #303f9f; border-bottom: 2px solid #5c6bc0; padding-bottom: 0.5rem; }}
-    .card-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(450px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }}
-    .card {{ 
-      background: white; 
-      border-radius: 8px; 
-      overflow: hidden; 
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-      transition: transform 0.3s, box-shadow 0.3s;
-      display: flex;
-      flex-direction: column;
-    }}
-    .card:hover {{ transform: translateY(-5px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }}
-    
-    .chart-wrapper {{ 
-      flex: 1;
-      position: relative;
-      min-height: 300px;
-      width: 100%;
-      overflow: hidden;
-    }}
-    
-    .chart-container {{ 
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-    }}
-    
-    .card img {{ 
-      width: 100%; 
-      height: 100%;
-      object-fit: contain;
-      display: block; 
-    }}
-    
-    .card-caption {{ 
-      padding: 1rem; 
-      font-size: 0.95rem; 
-      color: #555; 
-      border-top: 1px solid #eee;
-      background-color: #fcfcfc;
-    }}
-    
-    .summary {{ background-color: white; border-left: 4px solid #5c6bc0; padding: 1.5rem; margin: 0 0 3rem 0; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
-    
-    .insights-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }}
-    .insight-card {{ 
-      background: white; 
-      border-radius: 8px; 
-      padding: 1.2rem 1.5rem 1.2rem 1rem; 
-      box-shadow: 0 4px 6px rgba(0,0,0,0.07); 
-      border-left: 4px solid #4f46e5; 
-      display: flex;
-      align-items: flex-start;
-      transition: transform 0.3s, box-shadow 0.3s;
-    }}
-    .insight-card:hover {{ transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.1); }}
-    .insight-icon {{ font-size: 1.5rem; margin-right: 1rem; color: #4f46e5; }}
-    .insight-content {{ font-size: 0.95rem; color: #333; font-weight: 500; line-height: 1.5; }}
-    @media (max-width: 768px) {{
-      .card-grid {{ grid-template-columns: 1fr; }}
-    }}
-    /* Vega-Lite特定样式 */
-    .vega-embed {{
-      width: 100%;
-      height: 100%;
-    }}
-    .vega-embed .vega-actions {{
-      top: 0;
-      right: 0;
-      padding: 6px;
-    }}
-  </style>
-</head>
-<body>
-  <h1>数据分析报告</h1>
-{cards_html}{chart_script}</body>
-</html>'''
-    
-    return html
-
-
-def generate_dark_template(sections):
-    from html import escape
-    
-    # 处理图表配置
-    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
-    
-    def highlight_keywords_dark(text):
-        if not text:
-            return ""
-        # 这里可以添加关键词高亮逻辑
-        return text
-    
-    html_head = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>数据分析报告</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
-  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
-  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
-  <style>
-    body { 
-      font-family: 'Inter', sans-serif; 
-      background-color: #1a1a1a; 
-      color: #e0e0e0; 
-      max-width: 1000px; 
-      margin: auto; 
-      padding: 2rem;
-      line-height: 1.6;
-    }
-    h1 { 
-      text-align: center; 
-      color: #61dafb; 
-      border-bottom: 3px solid #3498db; 
-      padding-bottom: 0.5rem;
-      margin-bottom: 2rem;
-    }
-    h2 { 
-      background-color: #2c2c2c; 
-      color: #61dafb; 
-      padding: 1rem 1.5rem; 
-      border-radius: 8px; 
-      margin-top: 3rem; 
-      border-left: 5px solid #3498db;
-      font-weight: 600;
-    }
-    .chart-card { 
-      background: #2c2c2c; 
-      border-radius: 8px; 
-      padding: 1.5rem; 
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3); 
-      margin-bottom: 2rem; 
-      border: 1px solid #444;
-    }
-    .chart-card img { 
-      width: 100%; 
-      border-radius: 6px; 
-      margin: 1rem 0; 
-      border: 1px solid #444;
-    }
-    .chart-container {
-      height: 400px;
-      position: relative;
-      margin: 1rem 0;
-    }
-    .chart-caption { 
-      color: #a0a0a0; 
-      margin-bottom: 1rem;
-      font-size: 0.95rem;
-    }
-    .highlight { 
-      color: #61dafb; 
-      font-weight: bold; 
-    }
-    .summary { 
-      background-color: #2c2c2c; 
-      border-left: 5px solid #3498db; 
-      padding: 1.5rem; 
-      border-radius: 6px; 
-      margin-top: 2rem; 
-      font-size: 0.95rem;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-    }
-    .key-insight {
-      background-color: #2a2a2a;
-      border-radius: 8px;
-      padding: 1.2rem;
-      margin: 1.5rem 0;
-      border-left: 4px solid #61dafb;
-      position: relative;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-    }
-    .key-insight:before {
-      content: "💡";
-      font-size: 1.2rem;
-      position: absolute;
-      left: -12px;
-      top: -12px;
-      background: #333;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-    }
-    .key-insight-content {
-      color: #e0e0e0;
-      font-weight: 500;
-      padding-left: 0.5rem;
-    }
-    .insights-container {
-      margin: 2rem 0;
-    }
-  </style>
-</head>
-<body>
-  <h1>数据分析报告</h1>
-'''
-
-    html_body = ""
-    for section in sections:
-        title = section["title"]
-        html_body += f"<h2>{escape(title)}</h2>\n"
-        
-        # 添加关键指标（如果有的话）
-        key_insights = section.get("key_insights", [])
-        if key_insights:
-            html_body += f'<div class="insights-container">\n'
-            for insight in key_insights:
-                html_body += f'<div class="key-insight"><div class="key-insight-content">{escape(insight)}</div></div>\n'
-            html_body += f'</div>\n'
-            
-        for chart in section["charts"]:
-            caption = chart.get("caption", "")
-            img = chart.get("img", "")
-            config = chart.get("config", "")
-            
-            html_body += f'<div class="chart-card">\n'
-            html_body += f'<div class="chart-caption">{escape(caption)}</div>\n'
-            
-            if config:
-                chart_id = chart.get("chart_id", "")
-                html_body += f'<div class="chart-container">\n'
-                html_body += f'<canvas id="{chart_id}"></canvas>\n'
-                html_body += f'</div>\n'
-            else:
-                # 获取相对路径
-                relative_img_path = convert_to_relative_path(img)
-                html_body += f'<img src="{relative_img_path}" alt="{escape(caption)}">\n'
-                
-            html_body += f'</div>\n'
-            
-        summary = section.get("summary", "")
-        if summary:
-            html_body += f"<div class='summary'><strong>Chapter Summary：</strong> {highlight_keywords_dark(summary)}</div>\n"
-
-    # 生成Chart.js脚本
-    chart_script = generate_vegalite_script(chart_configs)
-    
-    html_tail = chart_script + "</body></html>"
-
-    return html_head + html_body + html_tail
-
-
-def generate_magazine_template(sections):
-    from html import escape
-    
-    # 处理图表配置
-    chart_configs, chart_id_counter = prepare_vegalite_config(sections)
-    
-    magazine_content = '''
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>数据分析报告</title>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
-        <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
-        <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
-        <style>
-            :root {
-                --primary-color: #0066cc;
-                --secondary-color: #00994d;
-                --text-color: #333333;
-                --bg-color: #f0f2f5;
-                --paper-color: #ffffff;
-                --border-color: #e2e8f0;
-                --highlight-bg: #e6f3ff;
-                --chart-bg-1: #e6ffe6;
-                --chart-bg-2: #f0f9ff;
-            }
-            
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            
-            body {
-                font-family: 'Inter', sans-serif;
-                color: var(--text-color);
-                background-color: var(--bg-color);
-                line-height: 1.6;
-                padding: 2rem;
-                min-height: 100vh;
-            }
-            
-            .paper-container {
-                max-width: 1200px;
-                margin: 0 auto;
-                background: var(--paper-color);
-                box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
-                border-radius: 8px;
-                padding: 3rem;
-                position: relative;
-                overflow: hidden;
-            }
-            
-            .paper-container::before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 2px;
-                background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
-            }
-            
-            .magazine-header {
-                background: linear-gradient(135deg, var(--primary-color), #0099cc);
-                color: white;
-                padding: 2.5rem;
-                border-radius: 8px;
-                margin-bottom: 3rem;
-                text-align: left;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            }
-            
-            .magazine-title {
-                font-family: 'Inter', sans-serif;
-                font-weight: 700;
-                font-size: 2.4rem;
-                margin-bottom: 0.5rem;
-            }
-            
-            .magazine-subtitle {
-                font-size: 1.1rem;
-                opacity: 0.9;
-            }
-            
-            .magazine-article {
-                margin-bottom: 4rem;
-                padding-bottom: 2rem;
-                border-bottom: 1px solid var(--border-color);
-            }
-            
-            .article-header {
-                margin-bottom: 2rem;
-            }
-            
-            h2 {
-                font-family: 'Inter', sans-serif;
-                font-size: 1.8rem;
-                color: var(--primary-color);
-                margin-bottom: 1.5rem;
-                border-bottom: 2px solid var(--border-color);
-                padding-bottom: 0.5rem;
-            }
-            
-            .article-content {
-                display: grid;
-                gap: 2rem;
-            }
-            
-            .layout-left-right {
-                grid-template-columns: 1fr 2fr;
-            }
-            
-            .layout-right-left {
-                grid-template-columns: 2fr 1fr;
-            }
-            
-            .layout-equal {
-                grid-template-columns: 1fr 1fr;
-            }
-            
-            .layout-full {
-                grid-template-columns: 1fr;
-            }
-            
-            .narrative-section {
-                background: var(--highlight-bg);
-                padding: 1.5rem;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            }
-            
-            .chapter-summary {
-                font-size: 1rem;
-                line-height: 1.7;
-                color: var(--text-color);
-            }
-            
-            .charts-section {
-                display: grid;
-                gap: 1.5rem;
-            }
-            
-            .charts-horizontal {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            
-            .charts-vertical {
-                grid-template-columns: 1fr;
-            }
-            
-            .chart-container-wrapper {
-                background: white;
-                border-radius: 8px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-                overflow: hidden;
-                transition: transform 0.2s ease;
-            }
-            
-            .chart-container-wrapper:hover {
-                transform: translateY(-2px);
-            }
-            
-            .chart-wrapper {
-                position: relative;
-                height: 350px;
-                padding: 1rem;
-            }
-            
-            .chart-container {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-            }
-            
-            .figure-caption {
-                padding: 0.8rem 1rem;
-                font-size: 0.9rem;
-                color: var(--text-color);
-                background: var(--chart-bg-2);
-                border-top: 1px solid var(--border-color);
-            }
-            
-            .key-insight {
-                background-color: rgba(79, 70, 229, 0.1);
-                border-radius: 8px;
-                padding: 1rem 1.2rem;
-                margin: 1rem 0;
-                position: relative;
-                border-left: 4px solid var(--primary-color);
-            }
-            
-            .key-insight:before {
-                content: "💡";
-                font-size: 1.2rem;
-                position: absolute;
-                left: -12px;
-                top: -12px;
-                background: white;
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            
-            .key-insight-content {
-                font-weight: 500;
-                color: var(--text-color);
-            }
-            
-            .insights-container {
-                margin-bottom: 2rem;
-            }
-            
-            /* Vega-Lite特定样式 */
-            .vega-embed {
-                width: 100%;
-                height: 100%;
-                padding: 0.5rem;
-            }
-            
-            .vega-embed .vega-actions {
-                top: 0.5rem;
-                right: 0.5rem;
-                padding: 0.5rem;
-                background: rgba(255,255,255,0.95);
-                border-radius: 4px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            
-            @media (max-width: 1024px) {
-                .article-content {
-                    grid-template-columns: 1fr !important;
-                }
-                
-                .charts-horizontal {
-                    grid-template-columns: 1fr;
-                }
-                
-                body {
-                    padding: 1rem;
-                }
-                
-                .magazine-header {
-                    padding: 1.5rem;
-                }
-                
-                h2 {
-                    font-size: 1.5rem;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="paper-container">
-            <header class="magazine-header">
-                <h1 class="magazine-title">Data Analysis Report</h1>
-                <p class="magazine-subtitle">A comprehensive analysis of customer behavior and purchasing patterns</p>
-            </header>
-    '''
-    
-    for i, section in enumerate(sections, 1):
-        title = section["title"]
-        summary = section.get("summary", "")
-        charts = section.get("charts", [])
-        
-        magazine_content += f'''
-        <article class="magazine-article">
-            <div class="article-header">
-                <h2>{escape(title)}</h2>
-            </div>
-        '''
-        
-        # 根据图表数量选择布局
-        if len(charts) == 1:
-            layout_class = "layout-left-right"
-        elif len(charts) == 2:
-            layout_class = "layout-equal"
-        else:
-            layout_class = "layout-full"
-            
-        magazine_content += f'<div class="article-content {layout_class}">\n'
-        
-        # 添加叙述部分
-        magazine_content += '''
-            <div class="narrative-section">
-                <div class="chapter-summary">
-        '''
-        magazine_content += escape(summary) if summary else ""
-        magazine_content += '''
-                </div>
-        '''
-        
-        # 添加关键指标（如果有的话）
-        key_insights = section.get("key_insights", [])
-        if key_insights:
-            magazine_content += '<div class="insights-container">\n'
-            for insight in key_insights:
-                magazine_content += f'''
-                    <div class="key-insight">
-                        <div class="key-insight-content">{escape(insight)}</div>
-                    </div>
-                '''
-            magazine_content += '</div>\n'
-            
-        magazine_content += '</div>\n'
-        
-        # 添加图表部分
-        if charts:
-            magazine_content += '<div class="charts-section charts-vertical">\n'
-            for chart in charts:
-                img = chart.get("img", "")
-                caption = chart.get("caption", "")
-                is_vegalite = chart.get("is_vegalite", False)
-                
-                magazine_content += '<div class="chart-container-wrapper">\n'
-                magazine_content += '<div class="chart-wrapper">\n'
-                
-                if is_vegalite:
-                    chart_id = chart.get("chart_id", "")
-                    relative_img_path = convert_to_relative_path(img)
-                    magazine_content += f'<div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div>\n'
-                else:
-                    relative_img_path = convert_to_relative_path(img)
-                    magazine_content += f'<img src="{relative_img_path}" alt="{escape(caption)}">\n'
-                
-                magazine_content += '</div>\n'
-                magazine_content += f'<div class="figure-caption">{escape(caption)}</div>\n'
-                magazine_content += '</div>\n'
-            
-            magazine_content += '</div>\n'
-        
-        magazine_content += '</div>\n</article>\n'
-    
-    # 添加Vega-Lite脚本
-    chart_script = generate_vegalite_script(chart_configs)
-    
-    magazine_content += '''
-        </div>
-    ''' + chart_script + '''
-    </body>
-    </html>
-    '''
-    
-    return magazine_content
-
+    # 先进行HTML转义，避免注入
+    escaped_text = escape(text)
+    
+    # 对每个关键词进行高亮处理
+    for keyword in keywords:
+        # 使用正则表达式进行大小写不敏感的替换
+        import re
+        pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+        escaped_text = pattern.sub(f'<span class="highlight">{keyword}</span>', escaped_text)
+    
+    return escaped_text
 
 def generate_dashboard_template(sections):
     from html import escape
     
     # 处理图表配置，使用Vega-Lite而不是AntV G2
     chart_configs, chart_id_counter = prepare_vegalite_config(sections)
-    
-    def highlight_keywords(text):
-        if not text:
-            return ""
-        return text
     
     # 生成仪表盘图表面板
     panels_html = ""
@@ -1512,7 +476,7 @@ def generate_dashboard_template(sections):
                 panels_html += f'''
                 <div class="metric-card">
                     <div class="metric-icon">📊</div>
-                    <div class="metric-content">{escape(insight)}</div>
+                    <div class="metric-content">{highlight_keywords(insight)}</div>
                 </div>
                 '''
             panels_html += '</div>\n'
@@ -1521,28 +485,66 @@ def generate_dashboard_template(sections):
         if charts:
             panels_html += '<div class="charts-grid">\n'
             for chart in charts:
-                caption = chart.get("caption", "")
-                img = chart.get("img", "")
-                vegalite_config = chart.get("vegalite_config", "")
-                is_vegalite = chart.get("is_vegalite", False)
-                
-                panels_html += f'''
-                <div class="chart-card">
-                '''
-                
-                if is_vegalite:
-                    chart_id = chart.get("chart_id", "")
-                    # Vega-Lite使用div容器
-                    # 添加data-fallback属性以供回退使用
-                    relative_img_path = convert_to_relative_path(img)
-                    panels_html += f'<div class="chart-wrapper"><div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div></div>\n'
+                # 检查是否是图表组
+                if isinstance(chart, dict) and chart.get("is_chart_group", False):
+                    # 处理图表组
+                    group_charts = chart.get("charts", [])
+                    group_caption = chart.get("group_caption", "")
+                    
+                    print(f"生成图表组模板，包含 {len(group_charts)} 个图表, caption: '{group_caption[:50]}...'")
+                    
+                    # 创建图表组容器
+                    panels_html += f'''
+                    <div class="chart-group-container chart-card">
+                        <div class="chart-group-grid chart-group-{len(group_charts)}">
+                    '''
+                    
+                    # 添加组内所有图表
+                    for group_chart in group_charts:
+                        img = group_chart.get("img", "")
+                        alt_text = group_chart.get("alt_text", "图表")
+                        is_vegalite = group_chart.get("is_vegalite", False)
+                        
+                        panels_html += '<div class="chart-group-item">\n'
+                        
+                        # 获取相对路径
+                        relative_img_path = convert_to_relative_path(img)
+                        
+                        if is_vegalite:
+                            chart_id = group_chart.get("chart_id", "")
+                            panels_html += f'<div class="chart-wrapper"><div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div></div>\n'
+                        else:
+                            panels_html += f'<div class="chart-wrapper"><img src="{relative_img_path}" alt="{escape(alt_text)}"></div>\n'
+                        
+                        panels_html += '</div>\n'
+                    
+                    # 结束图表组网格并正确显示caption
+                    panels_html += f'''
+                        </div>
+                        <div class="chart-caption group-caption">{highlight_keywords(group_caption)}</div>
+                    </div>
+                    '''
+                    
                 else:
-                    # 获取相对路径
-                    relative_img_path = convert_to_relative_path(img)
-                    panels_html += f'<div class="chart-wrapper"><img src="{relative_img_path}" alt="{escape(caption)}"></div>\n'
-                
-                panels_html += f'<div class="chart-caption">{escape(caption)}</div>\n'
-                panels_html += '</div>\n'
+                    # 处理单个图表
+                    caption = chart.get("caption", "")
+                    img = chart.get("img", "")
+                    alt_text = chart.get("alt_text", "图表")
+                    is_vegalite = chart.get("is_vegalite", False)
+                    
+                    panels_html += '<div class="chart-card">\n'
+                    
+                    if is_vegalite:
+                        chart_id = chart.get("chart_id", "")
+                        relative_img_path = convert_to_relative_path(img)
+                        panels_html += f'<div class="chart-wrapper"><div id="{chart_id}" data-fallback="{relative_img_path}" class="chart-container"></div></div>\n'
+                    else:
+                        relative_img_path = convert_to_relative_path(img)
+                        panels_html += f'<div class="chart-wrapper"><img src="{relative_img_path}" alt="{escape(alt_text)}"></div>\n'
+                    
+                    panels_html += f'<div class="chart-caption">{highlight_keywords(caption)}</div>\n'
+                    panels_html += '</div>\n'
+            
             panels_html += '</div>\n'
         
         # 添加仪表盘注释部分
@@ -1690,11 +692,12 @@ def generate_dashboard_template(sections):
             padding: 1.5rem;
         }}
         
-        /* 修改为charts-grid，避免与chart-container冲突 */
+        /* 图表网格布局 */
         .charts-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
             gap: 2rem;
+            margin-bottom: 1.5rem;
         }}
         
         .chart-card {{
@@ -1728,12 +731,46 @@ def generate_dashboard_template(sections):
             object-fit: contain;
         }}
         
+        /* 图表组样式 */
+        .chart-group-container {{
+            margin-bottom: 1.5rem;
+        }}
+        
+        .chart-group-grid {{
+            display: grid;
+            gap: 1rem;
+            padding: 1rem;
+        }}
+        
+        /* 根据组内图表数量自动调整布局 */
+        .chart-group-1 {{ grid-template-columns: 1fr; }}
+        .chart-group-2 {{ grid-template-columns: 1fr 1fr; }}
+        .chart-group-3 {{ grid-template-columns: 1fr 1fr 1fr; }}
+        .chart-group-4 {{ grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }}
+        .chart-group-5, .chart-group-6 {{ grid-template-columns: repeat(3, 1fr); }}
+        
+        .chart-group-item {{
+            border: 1px solid #eee;
+            border-radius: 4px;
+            overflow: hidden;
+        }}
+        
         .chart-caption {{
             padding: 1rem;
             font-size: 0.875rem;
             color: var(--text-light);
             border-top: 1px solid var(--border-color);
             background-color: #fcfcfc;
+            min-height: 3rem;  /* 确保caption有最小高度，即使为空 */
+        }}
+        
+        /* 图表组标题样式增强 */
+        .group-caption {{
+            font-weight: 500;
+            color: var(--accent-color);
+            border-left: 3px solid var(--accent-color);
+            padding-left: 0.75rem;
+            background-color: #f0f4ff;
         }}
         
         .panel-footer {{
@@ -1813,6 +850,10 @@ def generate_dashboard_template(sections):
             .charts-grid {{
                 grid-template-columns: 1fr;
             }}
+            
+            .chart-group-2, .chart-group-3, .chart-group-4, .chart-group-5, .chart-group-6 {{ 
+                grid-template-columns: 1fr;
+            }}
         }}
         
         /* Vega-Lite特定样式 */
@@ -1829,7 +870,7 @@ def generate_dashboard_template(sections):
 </head>
 <body>
     <div class="dashboard-header">
-        <h1 class="dashboard-title">数据分析仪表盘 (Vega-Lite)</h1>
+        <h1 class="dashboard-title">数据分析仪表盘</h1>
         <div class="dashboard-controls">
             <button class="dashboard-control">导出报告</button>
             <button class="dashboard-control">刷新数据</button>
@@ -1853,20 +894,66 @@ if __name__ == '__main__':
     parser.add_argument('--template', type=str, choices=['sidebar', 'grid', 'magazine', 'dashboard'], default='dashboard', help='Template style to use')
     args = parser.parse_args()
 
-    # Get absolute path for the markdown file
+    # 获取输入文件的绝对路径
     md_path = os.path.abspath(args.markdown_file)
     
-    # Determine output path - place HTML in same directory as markdown file if no path specified
+    if not os.path.exists(md_path):
+        print(f"错误: 找不到输入文件 {md_path}")
+        exit(1)
+    
+    # 确定输出路径 - 如果未指定目录，则放在与markdown同一目录
     output_path = args.output
     if not os.path.dirname(output_path):
         md_dir = os.path.dirname(md_path)
         output_path = os.path.join(md_dir, output_path)
     
-    sections = parse_markdown(md_path)
-    html = fill_template(sections, args.template)
+    try:
+        print(f"开始解析并生成报告...")
+        print(f"输入文件: {md_path}")
+        print(f"输出文件: {output_path}")
+        print(f"使用模板: {args.template}")
+        
+        # 解析Markdown文件
+        sections = parse_markdown(md_path)
+        
+        if not sections:
+            print("警告: 未找到任何章节数据。请检查Markdown文件格式。")
+            exit(1)
+            
+        # 统计图表和图表组数量
+        total_charts = 0
+        total_groups = 0
+        
+        for section in sections:
+            for chart in section.get("charts", []):
+                if isinstance(chart, dict) and chart.get("is_chart_group", False):
+                    total_groups += 1
+                    total_charts += len(chart.get("charts", []))
+                else:
+                    total_charts += 1
+        
+        print(f"解析结果: {len(sections)}个章节, {total_charts}个图表, {total_groups}个图表组")
+        
+        # 生成HTML内容
+        print("生成HTML报告...")
+        html = fill_template(sections, args.template)
     
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(html)
+        # 确保输出目录存在
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        # 写入HTML文件
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(html)
     
-    print(f"✅ 报告已生成: {output_path}")
-    print("  - 使用Vega-Lite渲染图表")
+        print(f"✅ 报告已成功生成: {output_path}")
+        print(f"  - 包含 {len(sections)} 个章节")
+        print(f"  - 包含 {total_charts} 个图表 ({total_groups} 个图表组)")
+        print(f"  - 使用了 {args.template} 模板")
+        
+    except Exception as e:
+        print(f"❌ 生成报告时发生错误: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        exit(1)
